@@ -453,6 +453,9 @@ type TaskView struct {
 	Issue          domain.Issue
 	Comments       []domain.LadoIssueComment
 	IssueReadError string
+	// IssueSHA256 is the hash of the issue's title and body as read for the
+	// view; a plan from the issue binds to it.
+	IssueSHA256 string
 	// IssueChanged says the issue or a comment a plan may use changed since
 	// the snapshot the latest revision was made from.
 	IssueChanged bool
@@ -472,6 +475,7 @@ func (s *Service) View(ctx context.Context, id domain.LadoTaskID) (TaskView, err
 			view.IssueReadError = errorMessage(err)
 		} else {
 			view.Issue, view.Comments = issue, comments
+			view.IssueSHA256 = issueTextSHA256(issue)
 			if latest := task.Plan.Latest; latest.ID != "" {
 				snapshot, _ := domain.NewLadoIssueSnapshot(task.IssueRef, issue.Title, issue.Body, comments)
 				view.IssueChanged = snapshot.SHA256() != latest.IssueSnapshotSHA256

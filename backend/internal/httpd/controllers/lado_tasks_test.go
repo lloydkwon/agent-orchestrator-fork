@@ -52,8 +52,10 @@ type fakeLadoTaskService struct {
 	planView     ladotask.PlanView
 	history      ladotask.PlanHistory
 	request      domain.LadoPlanRequest
+	revision     domain.LadoPlanRevision
 	approval     domain.LadoPlanApproval
 	gotPlanReq   ladotask.PlanRequestInput
+	gotIssuePlan ladotask.IssuePlanInput
 	gotRevision  domain.LadoPlanRevisionID
 	gotSHA       string
 	gotPolicySHA string
@@ -90,6 +92,12 @@ func (f *fakeLadoTaskService) RequestPlan(_ context.Context, in ladotask.PlanReq
 	f.calls++
 	f.gotPlanReq = in
 	return f.request, f.err
+}
+
+func (f *fakeLadoTaskService) PlanFromIssue(_ context.Context, in ladotask.IssuePlanInput) (domain.LadoPlanRevision, error) {
+	f.calls++
+	f.gotIssuePlan = in
+	return f.revision, f.err
 }
 
 func (f *fakeLadoTaskService) Plans(_ context.Context, id domain.LadoTaskID) (ladotask.PlanHistory, error) {
@@ -182,7 +190,7 @@ func TestLadoAPI_ListTasks(t *testing.T) {
 		t.Fatalf("tasks = %+v", resp.Tasks)
 	}
 	got := resp.Tasks[0]
-	want := controllers.LadoTaskIssueResponse{Ref: "github:acme/demo#12", Number: 12, Title: "Add login", State: "open", URL: "https://github.com/acme/demo/issues/12", ObservedAt: ladoTaskTime}
+	want := controllers.LadoTaskIssueResponse{Ref: "github:acme/demo#12", Number: 12, Title: "Add login", State: "open", URL: "https://github.com/acme/demo/issues/12", ObservedAt: ladoTaskTime, SHA256: "abc"}
 	if got.ID != "lado-task-1" || got.ProjectID != "mer" || got.Repository != "github:acme/demo" || got.State != "draft" || got.Agent != "claude-code" || got.Issue != want || got.CancelledAt != nil {
 		t.Fatalf("task = %+v", got)
 	}

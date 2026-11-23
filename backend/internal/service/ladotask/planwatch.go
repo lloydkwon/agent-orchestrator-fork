@@ -52,6 +52,36 @@ func (s *Service) WatchPlans(ctx context.Context) {
 		}
 		s.deliverWaiting(ctx, task, byTask[id])
 		s.pinPlans(ctx, task, byTask[id])
+		s.failUnpinnedIssueRequests(ctx, task, byTask[id])
+	}
+}
+
+// issueRequestGrace is how long a plan from the issue may take to be pinned.
+// PlanFromIssue pins it in the same call, so a request still without a
+// revision after this was left behind, as by a daemon that stopped.
+const issueRequestGrace = time.Minute
+
+// failUnpinnedIssueRequests fails the issue requests no revision answered,
+// so the task does not wait for a plan that never comes.
+func (s *Service) failUnpinnedIssueRequests(ctx context.Context, task domain.LadoTask, requests []domain.LadoPlanRequest) {
+	now := s.deps.Clock().UTC()
+	var revisions []domain.LadoPlanRevision
+	listed := false
+	for _, req := range requests {
+		if !req.FromIssue() || !req.FailedAt.IsZero() || task.Plan.Latest.RequestID == req.ID || now.Sub(req.RequestedAt) <= issueRequestGrace {
+			continue
+		}
+		if !listed {
+			var err error
+			if revisions, err = s.deps.Store.ListLadoPlanRevisions(ctx, task.ID); err != nil {
+				return
+			}
+			listed = true
+		}
+		if slices.ContainsFunc(revisions, func(rev domain.LadoPlanRevision) bool { return rev.RequestID == req.ID }) {
+			continue
+		}
+		s.failRequest(ctx, req, now, "LADO did not pin the plan from the issue")
 	}
 }
 
@@ -61,7 +91,7 @@ func (s *Service) WatchPlans(ctx context.Context) {
 func (s *Service) deliverWaiting(ctx context.Context, task domain.LadoTask, requests []domain.LadoPlanRequest) {
 	now := s.deps.Clock().UTC()
 	for i, req := range requests {
-		if req.IsWorker() || !req.DeliveredAt.IsZero() || !req.FailedAt.IsZero() {
+		if req.IsWorker() || req.FromIssue() || !req.DeliveredAt.IsZero() || !req.FailedAt.IsZero() {
 			continue
 		}
 		if i < len(requests)-1 {
@@ -103,11 +133,15 @@ func (s *Service) failRequest(ctx context.Context, req domain.LadoPlanRequest, a
 // yet, oldest first, in every session the task's requests went to: the
 // orchestrators of requests made before plan workers, and each designer that
 // submitted a final plan. Of a designer's versions, only the plan it
-// submitted last is pinned.
+// submitted last is pinned. A plan from the issue was pinned when it was
+// written, and no session holds it.
 func (s *Service) pinPlans(ctx context.Context, task domain.LadoTask, requests []domain.LadoPlanRequest) {
 	path := domain.LadoPlanPath(task.ID)
 	seen := map[domain.SessionID]bool{}
 	for _, req := range requests {
+		if req.FromIssue() {
+			continue
+		}
 		session := req.SessionID
 		if req.IsWorker() {
 			session = req.WorkerSession()
@@ -177,14 +211,32 @@ func (s *Service) pinVersion(ctx context.Context, task domain.LadoTask, req doma
 		s.deps.Log.Warn("LADO skipped a plan version whose bytes do not match AO's record", "task", task.ID, "version", version.Version)
 		return nil
 	}
+	source := string(version.Source)
+	if source == "" {
+		source = string(domain.ArtifactVersionSourceAgent)
+	}
+	_, err = s.pinContent(ctx, task, req, content, domain.LadoPlanRevision{
+		SessionID:       version.SessionID,
+		Path:            version.Path,
+		ArtifactVersion: int(version.Version),
+		Source:          source,
+		SHA256:          version.SHA256,
+	})
+	return err
+}
+
+// pinContent copies a plan into LADO's blob store and records it as the
+// task's next revision with its problems. from names where the plan came
+// from (SessionID, Path, ArtifactVersion, Source) and its SHA256.
+func (s *Service) pinContent(ctx context.Context, task domain.LadoTask, req domain.LadoPlanRequest, content []byte, from domain.LadoPlanRevision) (domain.LadoPlanRevision, error) {
 	if len(content) <= domain.LadoPlanMaxBytes {
 		if _, err := s.deps.Blobs.Put(content); err != nil {
-			return fmt.Errorf("pin the plan: %w", err)
+			return domain.LadoPlanRevision{}, fmt.Errorf("pin the plan: %w", err)
 		}
 	}
 	snapshot, err := s.snapshotOf(req)
 	if err != nil {
-		return err
+		return domain.LadoPlanRevision{}, err
 	}
 	comments := map[string]bool{}
 	for _, comment := range snapshot.Comments {
@@ -209,19 +261,15 @@ func (s *Service) pinVersion(ctx context.Context, task domain.LadoTask, req doma
 	}
 	reviewed, addressed, notAddressed := s.reviewProblems(ctx, req, plan)
 	problems = append(problems, reviewed...)
-	source := string(version.Source)
-	if source == "" {
-		source = string(domain.ArtifactVersionSourceAgent)
-	}
 	rev, created, err := s.deps.Store.PinLadoPlanRevision(ctx, domain.LadoPlanRevision{
 		ID:                  domain.LadoPlanRevisionID("lado-plan-" + s.deps.NewID()),
 		TaskID:              task.ID,
 		RequestID:           req.ID,
-		SessionID:           version.SessionID,
-		Path:                version.Path,
-		ArtifactVersion:     int(version.Version),
-		Source:              source,
-		SHA256:              version.SHA256,
+		SessionID:           from.SessionID,
+		Path:                from.Path,
+		ArtifactVersion:     from.ArtifactVersion,
+		Source:              from.Source,
+		SHA256:              from.SHA256,
 		BaseRef:             plan.BaseRef,
 		BaseSHA:             baseSHA,
 		IssueSnapshotSHA256: req.IssueSnapshotSHA256,
@@ -229,7 +277,7 @@ func (s *Service) pinVersion(ctx context.Context, task domain.LadoTask, req doma
 		CreatedAt:           s.deps.Clock().UTC(),
 	})
 	if err != nil {
-		return err
+		return domain.LadoPlanRevision{}, err
 	}
 	if created {
 		s.deps.Log.Info("LADO pinned a plan revision", "task", task.ID, "revision", rev.Number, "problems", len(rev.Problems))
@@ -238,7 +286,7 @@ func (s *Service) pinVersion(ctx context.Context, task domain.LadoTask, req doma
 			s.kickPlans()
 		}
 	}
-	return nil
+	return rev, nil
 }
 
 func hasProblem(problems []domain.LadoPlanProblem, field string) bool {

@@ -307,6 +307,11 @@ const (
 // A plan converted from a comment names it as "comment:<id>".
 const LadoPlanSourceIssue = "issue"
 
+// LadoPlanRevisionSourceIssue is the Source of a revision LADO wrote from
+// the issue itself (LadoPlanRequestIssue); "agent" and "user" name who wrote
+// an AO artifact version.
+const LadoPlanRevisionSourceIssue = "issue"
+
 // LadoPlanSourceComment returns the plan_source value for a comment.
 func LadoPlanSourceComment(id string) string {
 	return "comment:" + id

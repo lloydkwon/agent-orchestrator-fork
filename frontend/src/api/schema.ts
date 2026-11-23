@@ -2307,6 +2307,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/lado/tasks/{taskId}/issue-plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Pin the issue and a plan LADO writes from the issue text the developer read, without a plan worker; the developer approves it next */
+        post: operations["planLadoTaskFromIssue"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/lado/tasks/{taskId}/parts": {
         parameters: {
             query?: never;
@@ -6751,6 +6768,10 @@ export interface components {
             /** @description Folder and project name of a new workspace. */
             workspaceName?: string;
         };
+        CreateLadoIssuePlanRequest: {
+            /** @description The sha256 of the issue's title and body as the developer read them (the task view's issue.sha256, or the created task's issue.sha256); LADO refuses when the issue changed since. */
+            issueSha256: string;
+        };
         CreateLadoPlanRequestRequest: {
             /** @description What to change in the latest revision; makes this a change request. */
             note?: string;
@@ -7917,6 +7938,8 @@ export interface components {
         };
         LadoIssueTextResponse: {
             body: string;
+            /** @description Hash of this title and body; a plan from the issue binds to it. */
+            sha256?: string;
             /** @enum {string} */
             state: "open" | "in_progress" | "review" | "done" | "cancelled";
             title: string;
@@ -8334,10 +8357,10 @@ export interface components {
             failureCode?: "plan_worker_spawn_failed" | "plan_worker_no_plan" | "plan_worker_timed_out" | "plan_worker_agent_unsupported" | "replaced";
             id: string;
             /**
-             * @description Who writes the plan: a plan worker, or, for a request made before plan workers, the orchestrator.
+             * @description Who writes the plan: a plan worker, LADO from the issue itself without a plan worker, or, for a request made before plan workers, the orchestrator.
              * @enum {string}
              */
-            kind: "orchestrator" | "worker";
+            kind: "orchestrator" | "worker" | "issue";
             /** @description What the developer asked to change. */
             note?: string;
             /**
@@ -8347,7 +8370,7 @@ export interface components {
             phase?: "waiting" | "designing" | "critiquing" | "revising" | "submitted" | "fixing" | "done" | "failed" | "replaced";
             /** Format: date-time */
             requestedAt: string;
-            /** @description The session that writes the plan: the orchestrator asked, or the plan worker's designer; empty while a plan worker waits to start. */
+            /** @description The session that writes the plan: the orchestrator asked, or the plan worker's designer; empty while a plan worker waits to start, and for a plan from the issue. */
             sessionId: string;
             /** @description The issue comment the developer named as the plan. */
             sourceCommentId?: string;
@@ -8391,8 +8414,11 @@ export interface components {
             problems: components["schemas"]["LadoPlanProblemResponse"][];
             requestId: string;
             sha256: string;
-            /** @enum {string} */
-            source: "agent" | "user";
+            /**
+             * @description Who wrote the plan: the agent, a person editing it in the artifact viewer, or LADO from the issue itself.
+             * @enum {string}
+             */
+            source: "agent" | "user" | "issue";
             taskId: string;
             valid: boolean;
         };
@@ -8405,10 +8431,10 @@ export interface components {
             /** @description Hash of the pinned plan file. An approval binds to it. */
             sha256: string;
             /**
-             * @description Who wrote the version: the orchestrator, or a person editing it in the artifact viewer.
+             * @description Who wrote the version: the orchestrator, a person editing it in the artifact viewer, or LADO from the issue itself.
              * @enum {string}
              */
-            source: "agent" | "user";
+            source: "agent" | "user" | "issue";
             /** @description False when the plan has problems; such a plan cannot be approved. */
             valid: boolean;
         };
@@ -9335,6 +9361,8 @@ export interface components {
             observedAt: string;
             /** @description Canonical issue id, in the form AO stores in sessions.issue_id. */
             ref: string;
+            /** @description Hash of the title and body LADO last read; a plan from the issue binds to it. */
+            sha256?: string;
             /**
              * @description Normalized issue state. GitHub reports a not-planned close as cancelled.
              * @enum {string}
@@ -20701,6 +20729,87 @@ export interface operations {
             };
             /** @description Not Implemented */
             501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+        };
+    };
+    planLadoTaskFromIssue: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description LADO task id. */
+                taskId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateLadoIssuePlanRequest"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LadoPlanRevisionResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Not Implemented */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };

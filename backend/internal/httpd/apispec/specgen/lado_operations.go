@@ -70,6 +70,7 @@ var ladoSchemaNames = map[string]string{ //nolint:gosec // G101: schema names, n
 	"ControllersLadoPlanContentResponse":           "LadoPlanContentResponse",
 	"ControllersLadoPlanResponse":                  "LadoPlanResponse",
 	"ControllersCreateLadoPlanRequestRequest":      "CreateLadoPlanRequestRequest",
+	"ControllersCreateLadoIssuePlanRequest":        "CreateLadoIssuePlanRequest",
 	"ControllersApproveLadoPlanRequest":            "ApproveLadoPlanRequest",
 	"ControllersLadoIssueTextResponse":             "LadoIssueTextResponse",
 	"ControllersLadoIssueCommentResponse":          "LadoIssueCommentResponse",
@@ -404,6 +405,13 @@ func ladoOperations() []operation {
 			pathParams: taskID,
 			reqBody:    controllers.CreateLadoPlanRequestRequest{},
 			resps:      ladoResps(http.StatusCreated, controllers.LadoPlanRequestResponse{}, http.StatusBadRequest, http.StatusNotFound, http.StatusConflict, http.StatusServiceUnavailable),
+		},
+		{
+			method: http.MethodPost, path: "/api/v1/lado/tasks/{taskId}/issue-plan", id: "planLadoTaskFromIssue", tag: "lado",
+			summary:    "Pin the issue and a plan LADO writes from the issue text the developer read, without a plan worker; the developer approves it next",
+			pathParams: taskID,
+			reqBody:    controllers.CreateLadoIssuePlanRequest{},
+			resps:      ladoResps(http.StatusCreated, controllers.LadoPlanRevisionResponse{}, http.StatusBadRequest, http.StatusNotFound, http.StatusConflict, http.StatusServiceUnavailable),
 		},
 		{
 			method: http.MethodGet, path: "/api/v1/lado/tasks/{taskId}/plans", id: "listLadoPlans", tag: "lado",

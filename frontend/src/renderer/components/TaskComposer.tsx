@@ -46,7 +46,7 @@ import {
 import { useModelCatalogAuthRecovery } from "../hooks/useModelCatalogAuthRecovery";
 import { useUiStore } from "../stores/ui-store";
 import { ModelCatalogNotice } from "./ModelCatalogNotice";
-import { useCreateLadoTask, useLadoModeState } from "../hooks/useLado";
+import { useCreateLadoTask, useLadoModeState, useRunLadoTaskFromIssue } from "../hooks/useLado";
 import { LadoComposerContext, useLadoIssueRepository } from "./lado/LadoComposerContext";
 import { LadoImportIssuesDialog } from "./lado/LadoImportIssuesDialog";
 import { ladoErrorText } from "../lib/lado-errors";
@@ -186,6 +186,14 @@ export function TaskComposer({
 	const createIssueTask = useCreateLadoTask(projectId ?? "");
 	const issueRepository = useLadoIssueRepository(projectId ?? "", ladoMode);
 	const [importOpen, setImportOpen] = useState(false);
+	// Run without plan review: the issue's own text becomes the plan, approved
+	// at once. Off for every new task, since it skips the plan worker.
+	const [runDirectly, setRunDirectly] = useState(false);
+	const runFromIssue = useRunLadoTaskFromIssue(projectId ?? "");
+	// The task created for this request when running it failed afterwards, so
+	// submitting the same request again (project, repository, agent, model and
+	// text) retries the run instead of making a second issue.
+	const createdIssueTaskRef = useRef<{ request: string; taskId: string; issueSha256: string } | null>(null);
 	const preferenceContext = hostId ? `${hostId}:${projectId ?? ""}` : projectId ?? "";
 	const persistedPreferences = useMemo(
 		() => readTaskComposerPreferences(preferenceContext),
@@ -669,16 +677,31 @@ export function TaskComposer({
 		setIsSubmitting(true);
 		setError(undefined);
 		setFallbackAction(undefined);
+		const input = {
+			repository: issueRepository.selected || undefined,
+			text,
+			agent: selectedAgent || undefined,
+			model: requestedModel,
+		};
+		const request = JSON.stringify([projectId, input.repository, input.agent, input.model, text]);
+		let created = createdIssueTaskRef.current?.request === request ? createdIssueTaskRef.current : null;
+		createdIssueTaskRef.current = null;
 		try {
-			await createIssueTask.mutateAsync({
-				repository: issueRepository.selected || undefined,
-				text,
-				agent: selectedAgent || undefined,
-				model: requestedModel,
-			});
+			if (!created) {
+				const task = await createIssueTask.mutateAsync(input);
+				created = { request, taskId: task.id, issueSha256: task.issue.sha256 ?? "" };
+			}
+			createdIssueTaskRef.current = created;
+			// A cancelled confirmation leaves the plan waiting in the task view.
+			if (runDirectly) await runFromIssue.mutateAsync({ taskId: created.taskId, issueSha256: created.issueSha256 });
+			createdIssueTaskRef.current = null;
 			onIssueTasksCreated?.(projectId);
 		} catch (err) {
-			setError(ladoErrorText(t, err));
+			setError(
+				created
+					? t("lado.task.runDirectlyFailed", { reason: ladoErrorText(t, err) })
+					: ladoErrorText(t, err),
+			);
 		} finally {
 			setIsSubmitting(false);
 		}
@@ -772,7 +795,13 @@ export function TaskComposer({
 			canSubmit={canSubmit}
 			initialPrompt={initialPrompt}
 			context={ladoMode ? (
-				<LadoComposerContext issueRepository={issueRepository} disabled={isSubmitting} onImport={() => setImportOpen(true)} />
+				<LadoComposerContext
+					issueRepository={issueRepository}
+					disabled={isSubmitting}
+					onImport={() => setImportOpen(true)}
+					runDirectly={runDirectly}
+					onRunDirectlyChange={setRunDirectly}
+				/>
 			) : undefined}
 			onPromptChange={handlePromptChange}
 			labels={{
@@ -783,7 +812,9 @@ export function TaskComposer({
 					: t("newTask.createAsTui"),
 				removeFile: (name) => t("newTask.removeFile", { name }),
 				runsWith: t("newTask.runsWith"),
-				start: ladoMode ? t("lado.task.createIssue") : createLabel ?? t("newTask.start"),
+				start: ladoMode
+					? runDirectly ? t("lado.task.createIssueAndRun") : t("lado.task.createIssue")
+					: createLabel ?? t("newTask.start"),
 				starting: ladoMode ? t("lado.task.creatingIssue") : t("newTask.starting"),
 				task: t("newTask.task"),
 				taskPlaceholder,
