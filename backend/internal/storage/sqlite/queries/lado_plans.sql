@@ -59,10 +59,12 @@ SET delivery_attempts = delivery_attempts + 1,
 WHERE id = ? AND kind = 'orchestrator' AND delivered_at IS NULL AND failed_at IS NULL;
 
 -- name: FailLadoPlanRequest :execrows
+-- An orchestrator request LADO gave up delivering, or an issue request
+-- whose plan LADO could not pin.
 UPDATE lado_plan_requests
 SET failed_at = ?,
     delivery_error = ?
-WHERE id = ? AND kind = 'orchestrator' AND delivered_at IS NULL AND failed_at IS NULL;
+WHERE id = ? AND kind IN ('orchestrator', 'issue') AND delivered_at IS NULL AND failed_at IS NULL;
 
 -- name: InsertLadoPlanRevision :one
 INSERT INTO lado_plan_revisions (

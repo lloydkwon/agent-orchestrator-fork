@@ -24,6 +24,7 @@ type LadoTaskIssueResponse struct {
 	State      string    `json:"state" enum:"open,in_progress,review,done,cancelled" description:"Normalized issue state. GitHub reports a not-planned close as cancelled."`
 	URL        string    `json:"url"`
 	ObservedAt time.Time `json:"observedAt"`
+	SHA256     string    `json:"sha256,omitempty" description:"Hash of the title and body LADO last read; a plan from the issue binds to it."`
 }
 
 // LadoTaskResponse is one task.

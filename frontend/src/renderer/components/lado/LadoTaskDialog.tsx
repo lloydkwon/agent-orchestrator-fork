@@ -21,7 +21,15 @@ import type { TFunction } from "i18next";
 import { X } from "lucide-react";
 import { Fragment, useEffect, useId, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useApproveLadoPlan, useLadoPlan, useLadoTaskParts, useLadoTasks, useLadoTaskView, useRequestLadoPlan } from "../../hooks/useLado";
+import {
+	useApproveLadoPlan,
+	useLadoPlan,
+	useLadoTaskParts,
+	useLadoTasks,
+	useLadoTaskView,
+	useRequestLadoPlan,
+	useRunLadoTaskFromIssue,
+} from "../../hooks/useLado";
 import { formatTimeCompact } from "../../lib/format-time";
 import {
 	fetchLadoEffective,
@@ -165,6 +173,7 @@ function TaskViewBody({
 	const queryClient = useQueryClient();
 	const requestPlan = useRequestLadoPlan(projectId, taskId);
 	const approve = useApproveLadoPlan(projectId, taskId);
+	const runFromIssue = useRunLadoTaskFromIssue(projectId);
 	const [tab, setTab] = useState<string>(initialTab);
 	const [readingRules, setReadingRules] = useState(false);
 	const [rulesReadError, setRulesReadError] = useState<unknown>(null);
@@ -214,14 +223,17 @@ function TaskViewBody({
 	const canApprove = approvable && !runHolds && !approving;
 	const runLine = task.state === "failed" || (task.execution !== undefined && (runStates.has(task.state) || task.state === "closed_unmerged"));
 	const notice = approvalNotice(task, view, t);
-	const mutationError = requestPlan.error ?? approve.error ?? rulesReadError;
-	const staleRules = rulesChanged(approve.error);
+	const mutationError = requestPlan.error ?? approve.error ?? runFromIssue.error ?? rulesReadError;
+	const staleRules = rulesChanged(approve.error) || rulesChanged(runFromIssue.error);
+	// The issue text the view shows; a plan from the issue is made only from it.
+	const issueSha256 = view.issue?.sha256;
 
 	// The approval fixes the rules that apply now, so they are read again here
 	// rather than taken from the Rules tab. The desktop app's main process reads
 	// and signs them itself; the hash is what a browser sends.
 	const approvePlan = async (target: LadoPlan) => {
 		approve.reset();
+		runFromIssue.reset();
 		setRulesReadError(null);
 		setReadingRules(true);
 		let policySha256: string;
@@ -400,15 +412,34 @@ function TaskViewBody({
 						</Button>
 					</>
 				) : !latest ? (
-					<Button
-						type="button"
-						variant="footer-primary"
-						className={compactButtonClass}
-						disabled={pending || requestPlan.isPending}
-						onClick={() => requestPlan.mutate({})}
-					>
-						{requestPlan.isPending ? t("lado.view.requestingPlan") : t("lado.view.requestPlan")}
-					</Button>
+					<>
+						<Button
+							type="button"
+							variant="footer"
+							className={compactButtonClass}
+							title={t("lado.task.runDirectlyHint")}
+							disabled={!issueSha256 || pending || requestPlan.isPending || runFromIssue.isPending}
+							onClick={() => {
+								if (!issueSha256) return;
+								requestPlan.reset();
+								runFromIssue.mutate({ taskId, issueSha256 });
+							}}
+						>
+							{runFromIssue.isPending ? t("lado.view.runningFromIssue") : t("lado.view.runFromIssue")}
+						</Button>
+						<Button
+							type="button"
+							variant="footer-primary"
+							className={compactButtonClass}
+							disabled={pending || requestPlan.isPending || runFromIssue.isPending}
+							onClick={() => {
+								runFromIssue.reset();
+								requestPlan.mutate({});
+							}}
+						>
+							{requestPlan.isPending ? t("lado.view.requestingPlan") : t("lado.view.requestPlan")}
+						</Button>
+					</>
 				) : (
 					<>
 						<Button
@@ -743,11 +774,14 @@ const riskKeys = {
 function PlanContent({ plan, approvals }: { plan: LadoPlan; approvals: LadoTaskView["history"]["approvals"] }) {
 	const { t } = useTranslation();
 	const { revision, plan: content } = plan;
-	const source = content.planSource?.startsWith("comment:")
-		? t("lado.view.sourceComment", { comment: content.planSource.slice("comment:".length) })
-		: content.planSource === "issue"
-			? t("lado.view.sourceIssue")
-			: null;
+	// A plan LADO wrote from the issue itself had no plan worker or review.
+	const source = revision.source === "issue"
+		? t("lado.view.revisionFromIssue")
+		: content.planSource?.startsWith("comment:")
+			? t("lado.view.sourceComment", { comment: content.planSource.slice("comment:".length) })
+			: content.planSource === "issue"
+				? t("lado.view.sourceIssue")
+				: null;
 	const olderApproved = plan.latest && !plan.approved && approvals.some((approval) => approval.revisionId !== revision.id);
 	const riskKey = content.risk ? riskKeys[content.risk as keyof typeof riskKeys] : undefined;
 	const risk = riskKey ? t(riskKey) : content.risk;

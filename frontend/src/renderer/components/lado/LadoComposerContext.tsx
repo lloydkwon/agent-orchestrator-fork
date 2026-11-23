@@ -1,11 +1,14 @@
 // LADO fork: the New Task composer's LADO row. It says which repository the
 // issue goes to, lets the developer choose one in a workspace with several,
-// and offers importing open issues instead (docs/LJY-PRD/TDD.md §5.1).
-import { useEffect, useState } from "react";
+// and offers importing open issues instead (docs/LJY-PRD/TDD.md §5.1). The
+// "Run without plan review" switch has LADO take the issue's own text as the
+// plan, which the developer approves at once in the desktop confirmation.
+import { useEffect, useId, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useLadoRepositories } from "../../hooks/useLado";
 import { ladoErrorText } from "../../lib/lado-errors";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
+import { Switch } from "../ui/switch";
 
 const rememberedKey = (projectId: string) => `lado.issueRepository.${projectId}`;
 
@@ -46,12 +49,18 @@ export function LadoComposerContext({
 	issueRepository,
 	disabled,
 	onImport,
+	runDirectly,
+	onRunDirectlyChange,
 }: {
 	issueRepository: LadoIssueRepository;
 	disabled: boolean;
 	onImport: () => void;
+	/** Whether the new issue's own text becomes the plan, approved at once. */
+	runDirectly: boolean;
+	onRunDirectlyChange: (runDirectly: boolean) => void;
 }) {
 	const { t } = useTranslation();
+	const runDirectlyId = useId();
 	const { query, repositories, selected, choose } = issueRepository;
 	return (
 		<div className="flex min-w-0 items-center gap-2 px-4 pt-3 text-2xs text-muted-foreground">
@@ -86,6 +95,12 @@ export function LadoComposerContext({
 						: t("lado.task.createsIssue")}
 				</span>
 			)}
+			<div className="flex shrink-0 items-center gap-1.5" title={t("lado.task.runDirectlyHint")}>
+				<Switch id={runDirectlyId} checked={runDirectly} onCheckedChange={onRunDirectlyChange} disabled={disabled} />
+				<label htmlFor={runDirectlyId} className="cursor-pointer whitespace-nowrap">
+					{t("lado.task.runDirectly")}
+				</label>
+			</div>
 			<button
 				type="button"
 				className="shrink-0 rounded-md px-1.5 py-0.5 font-medium text-foreground outline-none hover:bg-interactive-hover focus-visible:outline-2 focus-visible:outline-ring disabled:pointer-events-none disabled:opacity-50"

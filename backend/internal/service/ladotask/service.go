@@ -778,12 +778,11 @@ func issueBody(body string, id domain.LadoTaskID) string {
 
 // observedIssue is what LADO records from a read of an issue.
 func observedIssue(issue domain.Issue, at time.Time) domain.LadoObservedIssue {
-	ref := domain.LadoIssueRef(issue.ID)
 	return domain.LadoObservedIssue{
 		Title:          issue.Title,
 		State:          issue.State,
 		URL:            issue.URL,
-		SnapshotSHA256: domain.LadoIssueSnapshot{ID: ref, Title: issue.Title, Body: issue.Body}.SHA256(),
+		SnapshotSHA256: issueTextSHA256(issue),
 		ObservedAt:     at,
 	}
 }
