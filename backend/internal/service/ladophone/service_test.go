@@ -44,6 +44,8 @@ type phoneHarness struct {
 	logs    *syncBuffer
 	dataDir string
 	state   string
+	// opts made s; restart makes a new service with them.
+	opts Options
 }
 
 func newPhoneHarness(t *testing.T) *phoneHarness {
@@ -71,7 +73,7 @@ func newPhoneHarnessWith(t *testing.T, edit func(*Options)) *phoneHarness {
 	}
 	s := New(opts)
 	t.Cleanup(s.Close)
-	return &phoneHarness{t: t, s: s, store: store, ts: ts, clock: clock, logs: logs, dataDir: dataDir, state: state}
+	return &phoneHarness{t: t, s: s, store: store, ts: ts, clock: clock, logs: logs, dataDir: dataDir, state: state, opts: opts}
 }
 
 func (h *phoneHarness) socket() string { return SocketPath(h.state) }

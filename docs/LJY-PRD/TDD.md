@@ -123,6 +123,7 @@ This is the complete list of upstream files LADO edits. Each edit stays a few li
 | `ports/outbound.go` | #60: `WorkspaceProjectConfig.ReuseExistingBranch` with its comment (6 lines: a blank line, the comment and the field) |
 | `session_manager/manager.go` (#60) | `createSessionWorkspace` passes `cfg.ReuseExistingBranch` on to `CreateWorkspaceProject` (2 lines: a blank line and the field); the single-repository `Create` call is unchanged |
 | `adapters/workspace/gitworktree/workspace.go` | #60: in `CreateWorkspaceProject`'s branch choice (the `!recovering` branch), `cfg.ReuseExistingBranch` calls `ladoReuseWorkspaceBranch` (`lado_reuse_branch.go`) instead of `workspaceProjectBranch` (5 lines added, 1 removed). If an upstream sync drops this hook, workspace part workers get `<branch>-2` again |
+| `httpd/api.go`, `daemon/daemon.go` | Phone approval: `APIDeps.LadoPhone` with its comment and the controller's `Phone` in the constructor entry (3 lines: 3 added, 1 removed); in the daemon `wireLadoPhone` right before `httpd.NewWithDeps`, one line in the `APIDeps` literal, and `startLadoPhone` with its deferred `stopLadoPhone` right after Connect Mobile's boot restore (4 lines added). The wiring, its compile-time `var _` checks and the boot reopening are in the new `daemon/lado_phone_wiring.go`; the routes are the LADO file `httpd/controllers/lado_phone.go` |
 
 The separate migration track (§4.1) means no upstream migration test needs an edit.
 

@@ -106,6 +106,7 @@ type Service struct {
 	enroll     *enrollment
 	sessions   *sessionTable
 	guard      *loginGuard
+	dryRuns    *dryRunLimiter
 
 	projects     LadoProjects
 	tasks        Tasks
@@ -153,6 +154,7 @@ func New(opts Options) *Service {
 		ceremonies:    newCeremonyTable(),
 		sessions:      newSessionTable(),
 		guard:         &loginGuard{},
+		dryRuns:       newDryRunLimiter(),
 		projects:      opts.Projects,
 		tasks:         opts.Tasks,
 		rules:         opts.Rules,

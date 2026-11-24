@@ -301,7 +301,7 @@ func (s *Service) handleApproveBegin(w http.ResponseWriter, r *http.Request) {
 		badRequest(w)
 		return
 	}
-	if !s.currentApproval(ctx, w, bound) {
+	if !s.currentApproval(ctx, w, sess.key, bound) {
 		return
 	}
 	cred, err := storedCredential(pk)
@@ -330,10 +330,10 @@ func (s *Service) handleApproveBegin(w http.ResponseWriter, r *http.Request) {
 	writePhoneJSON(w, approveBeginResponse{Result: resultOK, Ceremony: id, Options: assertion, BindingSHA256: bound.sha256})
 }
 
-// currentApproval reads the approval again and answers the refusal when the
-// binding no longer matches it, it carries database SQL, or the phone may
-// not approve it now.
-func (s *Service) currentApproval(ctx context.Context, w http.ResponseWriter, bound boundApproval) bool {
+// currentApproval reads the approval again for the phone session phone and
+// answers the refusal when the binding no longer matches it, it carries
+// database SQL, or the phone may not approve it now.
+func (s *Service) currentApproval(ctx context.Context, w http.ResponseWriter, phone string, bound boundApproval) bool {
 	current := boundApproval{kind: bound.kind}
 	var approvable, desktop bool
 	switch bound.kind {
@@ -345,7 +345,7 @@ func (s *Service) currentApproval(ctx context.Context, w http.ResponseWriter, bo
 		}
 		current.plan, approvable = f.binding, f.approvable
 	case kindIntegration:
-		f, err := s.integrationFacts(ctx, domain.SessionID(bound.integration.SessionID))
+		f, err := s.integrationFacts(ctx, phone, domain.SessionID(bound.integration.SessionID))
 		if err != nil {
 			s.writeServiceError(w, "read an integration", err)
 			return false

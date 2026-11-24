@@ -12,11 +12,13 @@ import (
 // then the routes below matched exactly.
 
 // Timeouts of the socket's server. Bodies are a few kilobytes of WebAuthn
-// data.
+// data. Answers wait longer: approving an integration runs a dry run, may
+// fetch the PRs and publishes their status, so writeTimeout leaves more than
+// the desktop app's 60 seconds for it.
 const (
 	readHeaderTimeout = 10 * time.Second
 	readTimeout       = 30 * time.Second
-	writeTimeout      = 30 * time.Second
+	writeTimeout      = 90 * time.Second
 	idleTimeout       = 2 * time.Minute
 )
 

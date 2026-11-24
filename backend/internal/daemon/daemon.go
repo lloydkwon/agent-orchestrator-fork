@@ -1024,6 +1024,7 @@ func Run() error {
 		nativeSessions, _ = codewhaleAgent.(ports.AgentNativeSessionResolver)
 	}
 
+	ladoPhone := wireLadoPhone(cfg, store, ladoPhoneDeps{tasks: ladoTasks, rules: ladoRules, executions: ladoQueue, integrations: ladoVerify}, log) // LADO fork
 	srv, err := httpd.NewWithDeps(cfg, log, termMgr, httpd.APIDeps{
 		Awake:              awakeSvc,
 		Projects:           projectSvc,
@@ -1067,6 +1068,7 @@ func Run() error {
 		LadoLogWatch:       ladoLogWatch,
 		LadoAccountLimits:  lado.watch.watch,
 		LadoDBChanges:      ladoDBChanges,
+		LadoPhone:          ladoPhone,
 		LadoPresence:       newLadoPresence(browserRuntimeToken, os.Getenv(browserruntime.RuntimeTokenStdinEnv) == "1", log),
 		AgentAuth:          agentAuthSvc,
 		GitHub:             newGitHubStatusService(githubpat.New(cfg.DataDir), prReader),
@@ -1137,6 +1139,8 @@ func Run() error {
 	if err := restoreMobileOnBoot(mobilebridge.Path(cfg.DataDir), bs); err != nil {
 		log.Warn("restore mobile bridge on boot failed", "err", err)
 	}
+	ladoPhoneDone := startLadoPhone(ctx, ladoPhone, log) // LADO fork: reopens phone approval left on
+	defer stopLadoPhone(ladoPhone, ladoPhoneDone)
 	go runRemoteHostAddressPublisher(ctx, bs, cfg.CloudControlPlaneURL, log)
 
 	if usagePipeline != nil {

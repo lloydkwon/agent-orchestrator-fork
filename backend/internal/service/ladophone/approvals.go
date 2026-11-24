@@ -90,27 +90,27 @@ func loginRequired(w http.ResponseWriter) {
 	writePhoneError(w, http.StatusUnauthorized, "LADO_PHONE_LOGIN_REQUIRED", "Log in with the phone's passkey first.")
 }
 
-// readSession reports whether the request may read: its session lives,
-// phone approval is on and the session's passkey can still log in.
-// Otherwise it answers 401 and ends the session.
-func (s *Service) readSession(w http.ResponseWriter, r *http.Request) bool {
+// readSession reports whether the request may read, with its session's
+// key: its session lives, phone approval is on and the session's passkey
+// can still log in. Otherwise it answers 401 and ends the session.
+func (s *Service) readSession(w http.ResponseWriter, r *http.Request) (string, bool) {
 	sess, ok := s.sessions.use(sessionToken(r), r.Header.Get(headerLogin), s.now())
 	if !ok {
 		loginRequired(w)
-		return false
+		return "", false
 	}
 	settings, err := s.store.LadoPhoneSettings(r.Context())
 	if err != nil {
 		s.log.Error("lado phone: read settings", "error", err)
 		writePhoneError(w, http.StatusInternalServerError, "LADO_PHONE_FAILED", "LADO could not read its settings.")
-		return false
+		return "", false
 	}
 	if _, active := s.activePasskey(r.Context(), settings, sess.credentialID); !settings.Enabled || !active {
 		s.sessions.dropPasskey(sess.passkeyID)
 		loginRequired(w)
-		return false
+		return "", false
 	}
-	return true
+	return sess.key, true
 }
 
 // activePasskey returns the enrolled passkey of a credential when it can
@@ -129,7 +129,7 @@ func (s *Service) activePasskey(ctx context.Context, settings domain.LadoPhoneSe
 }
 
 func (s *Service) handleApprovals(w http.ResponseWriter, r *http.Request) {
-	if !s.readSession(w, r) {
+	if _, ok := s.readSession(w, r); !ok {
 		return
 	}
 	items, err := s.pendingApprovals(r.Context())
@@ -275,7 +275,7 @@ func (f planFacts) detail() approvalDetail {
 }
 
 func (s *Service) handlePlanDetail(w http.ResponseWriter, r *http.Request) {
-	if !s.readSession(w, r) {
+	if _, ok := s.readSession(w, r); !ok {
 		return
 	}
 	f, err := s.planFacts(r.Context(), domain.LadoPlanRevisionID(r.PathValue("id")))
@@ -299,8 +299,9 @@ type integrationFacts struct {
 }
 
 // integrationFacts reads the execution and, when its open PRs are verified
-// and not all approved, runs one dry run of approving them all.
-func (s *Service) integrationFacts(ctx context.Context, session domain.SessionID) (integrationFacts, error) {
+// and not all approved, runs one dry run of approving them all, unless the
+// phone's session (phone, its key) ran too many lately (slowDown).
+func (s *Service) integrationFacts(ctx context.Context, phone string, session domain.SessionID) (integrationFacts, error) {
 	if s.executions == nil || s.integrations == nil {
 		return integrationFacts{}, approvalsUnavailable()
 	}
@@ -323,6 +324,9 @@ func (s *Service) integrationFacts(ctx context.Context, session domain.SessionID
 	reqs := make([]ladoverify.ApprovePR, 0, len(f.prs))
 	for _, pr := range f.prs {
 		reqs = append(reqs, ladoverify.ApprovePR{PRURL: pr.PR.URL, HeadSHA: strings.ToLower(pr.PR.HeadSHA)})
+	}
+	if !s.dryRuns.allow(phone, s.now()) {
+		return integrationFacts{}, slowDown()
 	}
 	dry, err := s.integrations.ApproveIntegration(ctx, ladoverify.ApproveInput{SessionID: session, PRs: reqs, DryRun: true})
 	if err != nil {
@@ -380,10 +384,11 @@ func (f integrationFacts) detail() approvalDetail {
 }
 
 func (s *Service) handleIntegrationDetail(w http.ResponseWriter, r *http.Request) {
-	if !s.readSession(w, r) {
+	key, ok := s.readSession(w, r)
+	if !ok {
 		return
 	}
-	f, err := s.integrationFacts(r.Context(), domain.SessionID(r.PathValue("id")))
+	f, err := s.integrationFacts(r.Context(), key, domain.SessionID(r.PathValue("id")))
 	if err != nil {
 		s.writeServiceError(w, "read an integration", err)
 		return

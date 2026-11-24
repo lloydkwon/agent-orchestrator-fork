@@ -93,6 +93,7 @@ func TestApproveCookieAloneRefused(t *testing.T) {
 		}
 		b := h.beginOK(cookie, h.detail(cookie, kind, id))
 		wantError(t, kind+" finish without an assertion", h.approveFinish(cookie, b.Ceremony, map[string]any{}), http.StatusForbidden, "LADO_PHONE_SIGNATURE_FAILED")
+		h.paceDryRuns()
 		b = h.beginOK(cookie, h.detail(cookie, kind, id))
 		wantError(t, kind+" finish with a null credential", h.approveFinish(cookie, b.Ceremony, nil), http.StatusForbidden, "LADO_PHONE_SIGNATURE_FAILED")
 	}
@@ -233,6 +234,7 @@ func TestBeginRefusesStaleBinding(t *testing.T) {
 		"pr":      mutate(func(b *integrationBinding) { b.PRs[0].URL = "https://github.com/acme/app/pull/9" }),
 		"session": mutate(func(b *integrationBinding) { b.SessionID = "sess-other" }),
 	} {
+		h.paceDryRuns()
 		w := h.approveBegin(cookie, kindIntegration, b)
 		if w.Code != http.StatusConflict && w.Code != http.StatusNotFound {
 			t.Errorf("integration binding with another %s: %d %s, want refused", name, w.Code, w.Body)
@@ -241,6 +243,7 @@ func TestBeginRefusesStaleBinding(t *testing.T) {
 	// A new record after the detail was read.
 	h.seedIntegration(testSession, testIntTask, testPRURL, testHead, 7, append(h.cleanItems(),
 		mustItem(t, domain.LadoVerifyReview, domain.LadoVerifyConfirm, domain.LadoCodeReviewInconclusive, domain.LadoReviewDetails{Rounds: 2}))...)
+	h.paceDryRuns()
 	wantError(t, "integration whose record changed", h.approveBegin(cookie, kindIntegration, di.Binding), http.StatusConflict, "LADO_PHONE_STALE")
 	noApprovals(t, h)
 }
@@ -287,6 +290,7 @@ func TestIntegrationDBSQLRefusedAtBeginAndFinish(t *testing.T) {
 
 	// Database SQL that turns up after begin: Allow refuses it before
 	// anything is recorded.
+	h.paceDryRuns()
 	b := h.beginOK(cookie, h.detail(cookie, kindIntegration, string(testSession)))
 	h.lado.set(func(f *fakeLado) {
 		rec := f.records[testSession][0]
