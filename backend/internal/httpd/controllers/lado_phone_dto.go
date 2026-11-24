@@ -14,12 +14,12 @@ type LadoPhoneStatusResponse struct {
 	// Supported is false off Linux, where phone approval cannot be turned on.
 	Supported bool `json:"supported"`
 	Enabled   bool `json:"enabled"`
-	// RPID, Origin, OwnerLogin and ServePort are what turning it on fixed;
-	// they stay after it is turned off.
+	// RPID, Origin and OwnerLogin are what turning it on fixed; they stay
+	// after it is turned off.
 	RPID       string `json:"rpId" description:"WebAuthn relying party id: the machine's MagicDNS name."`
 	Origin     string `json:"origin" description:"https://<MagicDNS name>:<serve port>, the phone pages' origin."`
 	OwnerLogin string `json:"ownerLogin" description:"The tailnet login that turned phone approval on; only its requests pass."`
-	ServePort  int    `json:"servePort"`
+	ServePort  int    `json:"servePort" description:"The tailnet HTTPS port phone approval serves on: the one turning it on fixed while it is on, otherwise the one turning it on would use (default 8444)."`
 	// Listening says whether the phone socket's server runs.
 	Listening bool `json:"listening"`
 	// EnrollURL is the page a phone opens to make a passkey.

@@ -268,3 +268,15 @@ func TestEnableRollsBackWhenTheStoreRefuses(t *testing.T) {
 		t.Fatalf("rollback not logged: %s", h.logs)
 	}
 }
+
+func TestStatusNamesTheServePortBeforeFirstOn(t *testing.T) {
+	h := newPhoneHarness(t)
+	st, err := h.s.Status(context.Background())
+	if err != nil || st.Enabled || st.ServePort != DefaultServePort {
+		t.Fatalf("Status before phone approval was ever on = %+v, %v; want serve port %d", st, err, DefaultServePort)
+	}
+	other := newPhoneHarnessWith(t, func(o *Options) { o.Port = 9443 })
+	if st, err := other.s.Status(context.Background()); err != nil || st.ServePort != 9443 {
+		t.Fatalf("Status with port 9443 = %+v, %v", st, err)
+	}
+}

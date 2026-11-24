@@ -6,8 +6,9 @@ package ladophone
 //  1. The detail (approvals.go) gives the binding: a plan's revision, its
 //     sha256 and the rules' sha256; an integration's open PRs, each head with
 //     its record's sha256 and the codes to confirm.
-//  2. begin reads the state again and refuses a binding that no longer
-//     matches it, one with production database SQL and one the phone may
+//  2. begin checks, as finish does, that tailscale serve still points at
+//     the socket, then reads the state again and refuses a binding that no
+//     longer matches it, one with production database SQL and one the phone may
 //     not approve now. The challenge is
 //     SHA256("lado-phone-approve-v1\n" + ceremony id + "\n" + binding sha256),
 //     the binding sha256 being that of its canonical JSON, and only the
@@ -159,7 +160,7 @@ func decodeBinding(kind string, raw json.RawMessage) (boundApproval, error) {
 			if pr.Confirm == nil {
 				pr.Confirm = []string{}
 			}
-			if !strings.HasPrefix(pr.URL, "https://") || len(pr.URL) > 2048 || !gitSHA.MatchString(pr.Head) ||
+			if !validPRURL(pr.URL) || !gitSHA.MatchString(pr.Head) ||
 				!sha256Hex64.MatchString(pr.VerificationSHA256) || len(pr.Confirm) > 64 {
 				return boundApproval{}, errors.New("malformed integration binding")
 			}
@@ -176,6 +177,14 @@ func decodeBinding(kind string, raw json.RawMessage) (boundApproval, error) {
 		return boundApproval{}, errors.New("trailing data after the binding")
 	}
 	return b.withSHA256(), nil
+}
+
+// validPRURL reports whether url is a pull or merge request LADO reads
+// (domain.LadoPRRepo): GitHub's on github.com, GitLab's over https or http,
+// as an internal GitLab serves it. The detail and begin use it alike.
+func validPRURL(url string) bool {
+	_, err := domain.LadoPRRepo(url)
+	return err == nil
 }
 
 // integrationSubject is the presence subject of an integration binding:
@@ -260,6 +269,10 @@ func phoneLocked(w http.ResponseWriter) {
 	writePhoneError(w, http.StatusTooManyRequests, "LADO_PHONE_LOCKED", "Too many failed passkey checks. Try again in a few minutes.")
 }
 
+func serveMoved(w http.ResponseWriter) {
+	writePhoneError(w, http.StatusConflict, "LADO_PHONE_SERVE_MOVED", "Tailscale serve no longer points at phone approval.")
+}
+
 func passkeyRevoked(w http.ResponseWriter) {
 	writePhoneError(w, http.StatusForbidden, "LADO_PHONE_PASSKEY_REVOKED", "This phone's passkey was revoked.")
 }
@@ -294,6 +307,12 @@ func (s *Service) handleApproveBegin(w http.ResponseWriter, r *http.Request) {
 	if !active {
 		s.sessions.dropPasskey(sess.passkeyID)
 		passkeyRevoked(w)
+		return
+	}
+	// As finish does, and before a dry run: a page served from elsewhere
+	// on this origin gets no ceremony.
+	if !s.serveStillOurs(ctx, settings) {
+		serveMoved(w)
 		return
 	}
 	bound, err := decodeBinding(req.Kind, req.Binding)
@@ -402,7 +421,7 @@ func (s *Service) handleApproveFinish(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !s.serveStillOurs(ctx, settings) {
-		writePhoneError(w, http.StatusConflict, "LADO_PHONE_SERVE_MOVED", "Tailscale serve no longer points at phone approval.")
+		serveMoved(w)
 		return
 	}
 	checked, result := s.checkAssertion(ctx, settings, c, req.Credential, c.credentialID, "approval")
@@ -415,18 +434,20 @@ func (s *Service) handleApproveFinish(w http.ResponseWriter, r *http.Request) {
 		writePhoneError(w, http.StatusInternalServerError, "LADO_PHONE_FAILED", "LADO could not check the signature.")
 		return
 	}
-	s.approve(ctx, w, req.Ceremony, c, checked)
+	s.approve(ctx, w, now, req.Ceremony, c, checked)
 }
 
 // approve hands the bound approval to LADO with the passkey's proof and
-// audits the binding once LADO approved it.
-func (s *Service) approve(ctx context.Context, w http.ResponseWriter, ceremonyID string, c ceremony, checked checkedAssertion) {
+// audits the binding once LADO approved it. The proof is used at now, the
+// time finish checked the ceremony's age against, so it is never used
+// after it expires.
+func (s *Service) approve(ctx context.Context, w http.ResponseWriter, now time.Time, ceremonyID string, c ceremony, checked checkedAssertion) {
 	pk, bound := checked.passkey, c.approval
 	proof := domain.LadoPresenceProof{
 		Nonce:     "pk-" + ceremonyID,
 		Via:       domain.LadoPresenceViaPasskey + pk.Fingerprint,
 		ExpiresAt: c.started.Add(approveTTL).UTC(),
-		UsedAt:    s.now().UTC(),
+		UsedAt:    now.UTC(),
 	}
 	var subjectKind, subjectID string
 	var err error

@@ -2,12 +2,15 @@ package ladophone
 
 import (
 	"context"
+	"maps"
 	"net/http"
 	"strings"
 	"testing"
 
 	"github.com/aoagents/agent-orchestrator/backend/internal/domain"
+	"github.com/aoagents/agent-orchestrator/backend/internal/service/ladopolicy"
 	"github.com/aoagents/agent-orchestrator/backend/internal/service/ladoqueue"
+	"github.com/aoagents/agent-orchestrator/backend/internal/service/ladotask"
 )
 
 func TestApprovalsListShowsWhatWaits(t *testing.T) {
@@ -137,5 +140,73 @@ func TestLoginClosedWhenPhoneApprovalOff(t *testing.T) {
 	}
 	if b := h.loginBegin(); b.Result != "closed" {
 		t.Fatalf("login begin while off = %q", b.Result)
+	}
+}
+
+// seedApprovedPlan puts a task whose latest revision rev an approval covers,
+// as edit leaves it, with its plan view and rules.
+func (h *approvalHarness) seedApprovedPlan(id domain.LadoTaskID, rev domain.LadoPlanRevisionID, edit func(*domain.LadoTask)) {
+	r := domain.LadoPlanRevision{ID: rev, TaskID: id, Number: 3, SHA256: testPlanSHA}
+	task := domain.LadoTask{
+		ID: id, ProjectID: testProject, IssueRef: domain.IssueID("acme/app#" + string(id)), Issue: domain.LadoObservedIssue{Title: string(id)},
+		Plan: domain.LadoTaskPlan{Latest: r, Approval: domain.LadoPlanApproval{ID: domain.LadoPlanApprovalID("appr-" + id), RevisionID: rev, TaskID: id, SHA256: testPlanSHA}},
+	}
+	edit(&task)
+	h.lado.set(func(f *fakeLado) {
+		f.tasks[testProject] = replaceTask(f.tasks[testProject], task)
+		f.plans[rev] = ladotask.PlanView{Task: task, Revision: r, Content: "# 계획\n", Latest: true, Approved: true}
+		f.rules[id] = ladopolicy.EffectiveView{Resolution: ladopolicy.Resolution{Ceiling: domain.PermissionModeAuto, SHA256: testPolicySHA}}
+	})
+}
+
+func TestApprovalsListShowsPlansToApproveAgain(t *testing.T) {
+	h := newApprovalHarness(t)
+	// The rules changed since the approval; its rules block the run; its run
+	// failed. A plan approved and queued waits for nothing.
+	h.seedApprovedPlan("task-rules", "rev-rules", func(task *domain.LadoTask) {
+		task.Plan.Snapshot = domain.LadoPolicySnapshotRef{ID: "snap-1", SHA256: strings.Repeat("1", 64)}
+		task.Plan.PolicySHA256 = strings.Repeat("2", 64)
+	})
+	h.seedApprovedPlan("task-blocked", "rev-blocked", func(task *domain.LadoTask) {
+		task.Plan.Snapshot = domain.LadoPolicySnapshotRef{ID: "snap-2", SHA256: testPolicySHA, Blocking: true}
+	})
+	h.seedApprovedPlan("task-failed", "rev-failed", func(task *domain.LadoTask) {
+		task.Execution = domain.LadoExecution{SessionID: "sess-failed", TaskID: "task-failed", PlanApprovalID: task.Plan.Approval.ID, SessionTerminated: true}
+	})
+	h.seedApprovedPlan("task-queued", "rev-queued", func(task *domain.LadoTask) {
+		task.Queue = domain.LadoQueueEntry{ID: "q-1", TaskID: "task-queued", PlanApprovalID: task.Plan.Approval.ID}
+	})
+	cookie := h.login()
+	list := decodeInto[listView](t, h.send(http.MethodGet, "/api/approvals", nil, cookie))
+	lines := map[string]string{}
+	for _, item := range list.Items {
+		if item.Kind == kindPlan {
+			lines[item.ID] = item.Line
+		}
+	}
+	want := map[string]string{
+		"rev-2":       "계획 리비전 2",
+		"rev-rules":   "계획 리비전 3 · 규칙이 바뀌어 다시 승인 필요",
+		"rev-blocked": "계획 리비전 3 · 막는 규칙 있음",
+		"rev-failed":  "계획 리비전 3 · 실패 — 다시 승인 가능",
+	}
+	if !maps.Equal(lines, want) {
+		t.Fatalf("plan lines = %v\nwant %v", lines, want)
+	}
+
+	// The detail agrees: changed rules and a failed run are approved again
+	// from the phone, a blocked plan is not, and its summary says why.
+	for id, approvable := range map[string]bool{"rev-rules": true, "rev-failed": true, "rev-blocked": false} {
+		d := h.detail(cookie, kindPlan, id)
+		if d.Approvable != approvable || len(d.Lines) == 0 || !strings.HasSuffix(want[id], d.Lines[0]) {
+			t.Errorf("%s: detail = %+v", id, d)
+		}
+		if !approvable && d.Reason == "" {
+			t.Errorf("%s: no reason", id)
+		}
+	}
+	b := h.beginOK(cookie, h.detail(cookie, kindPlan, "rev-rules"))
+	if w := h.approveFinish(cookie, b.Ceremony, h.key.get(t, b.asBegin(), iPhoneFlags)); w.Code != http.StatusOK {
+		t.Fatalf("approve a plan whose rules changed: %d %s\n%s", w.Code, w.Body, h.logs)
 	}
 }

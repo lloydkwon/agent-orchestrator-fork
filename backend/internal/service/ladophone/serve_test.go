@@ -29,6 +29,8 @@ type fakeTailscale struct {
 	stateful bool
 	target   string
 	funnel   bool
+	// onServeStatus, when set, runs at each serve status read.
+	onServeStatus func()
 }
 
 func (f *fakeTailscale) run(_ context.Context, args ...string) ([]byte, error) {
@@ -36,6 +38,9 @@ func (f *fakeTailscale) run(_ context.Context, args ...string) ([]byte, error) {
 	defer f.mu.Unlock()
 	call := strings.Join(args, " ")
 	f.calls = append(f.calls, call)
+	if call == "serve status --json" && f.onServeStatus != nil {
+		f.onServeStatus()
+	}
 	if f.failOn != "" && strings.HasPrefix(call, f.failOn) {
 		return nil, errors.New("tailscale failed")
 	}

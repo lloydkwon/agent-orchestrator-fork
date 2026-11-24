@@ -46,7 +46,8 @@ export async function enableLadoPhone(): Promise<LadoPhoneStatus | null> {
 		if (result.status === "error") throw new LadoApiError(result.message, result.code, result.details);
 		return result.phone;
 	}
-	const { data, error } = await apiClient.POST("/api/v1/lado/phone/enable");
+	// The daemon reads the body strictly as {}, the bytes a proof signs.
+	const { data, error } = await apiClient.POST("/api/v1/lado/phone/enable", { body: {} });
 	if (error) throw ladoError(error, "Could not turn on phone approval");
 	return data;
 }

@@ -511,3 +511,87 @@ func TestApprovalAnswersOnlyTheSessionPasskey(t *testing.T) {
 		http.StatusForbidden, "LADO_PHONE_SIGNATURE_FAILED")
 	noApprovals(t, h)
 }
+
+func TestHTTPMergeRequestApprovedFromPhone(t *testing.T) {
+	h := newApprovalHarness(t)
+	cookie := h.login()
+	// A merge request of a GitLab LADO reaches over http, as
+	// domain.LadoPRRepo reads it, is approved from the phone begin to finish.
+	const mrSession, mrURL = domain.SessionID("sess-mr"), "http://gitlab.internal/team/apps/front/-/merge_requests/3"
+	mrHead := strings.Repeat("3", 40)
+	h.seedIntegration(mrSession, "task-mr", mrURL, mrHead, 3, h.cleanItems()...)
+	d := h.detail(cookie, kindIntegration, string(mrSession))
+	if !d.Approvable || d.Reason != "" {
+		t.Fatalf("detail of an http merge request = %+v", d)
+	}
+	b := h.beginOK(cookie, d)
+	if w := h.approveFinish(cookie, b.Ceremony, h.key.get(t, b.asBegin(), iPhoneFlags)); w.Code != http.StatusOK {
+		t.Fatalf("approve an http merge request: %d %s\n%s", w.Code, w.Body, h.logs)
+	}
+	h.lado.read(func(f *fakeLado) {
+		if len(f.integrated) != 1 || len(f.approveCalls) != 1 || f.approveCalls[0].PRs[0].PRURL != mrURL {
+			t.Fatalf("integrations %+v, calls %+v", f.integrated, f.approveCalls)
+		}
+	})
+
+	// A URL LADO does not read as a PR: the detail and begin refuse it alike.
+	const oddSession, oddURL = domain.SessionID("sess-odd"), "https://example.com/acme/app/pull/4"
+	h.seedIntegration(oddSession, "task-odd", oddURL, strings.Repeat("4", 40), 4, h.cleanItems()...)
+	h.paceDryRuns()
+	od := h.detail(cookie, kindIntegration, string(oddSession))
+	if od.Approvable || od.Reason == "" {
+		t.Fatalf("detail of a PR URL LADO does not read = %+v", od)
+	}
+	h.paceDryRuns()
+	wantError(t, "begin with a PR URL LADO does not read", h.approveBegin(cookie, kindIntegration, od.Binding), http.StatusBadRequest, "LADO_PHONE_BAD_REQUEST")
+}
+
+func TestBeginRefusedWhenServeMoved(t *testing.T) {
+	h := newApprovalHarness(t)
+	cookie := h.login()
+	dp := h.detail(cookie, kindPlan, string(testRevision))
+	di := h.detail(cookie, kindIntegration, string(testSession))
+	dryRuns := func() int {
+		var n int
+		h.lado.read(func(f *fakeLado) { n = len(f.dryRuns) })
+		return n
+	}
+	before := dryRuns()
+	h.ts.mu.Lock()
+	h.ts.target = "http://127.0.0.1:9999"
+	h.ts.mu.Unlock()
+	h.paceDryRuns()
+	wantError(t, "plan begin after serve moved", h.approveBegin(cookie, kindPlan, dp.Binding), http.StatusConflict, "LADO_PHONE_SERVE_MOVED")
+	wantError(t, "integration begin after serve moved", h.approveBegin(cookie, kindIntegration, di.Binding), http.StatusConflict, "LADO_PHONE_SERVE_MOVED")
+	if n := dryRuns(); n != before {
+		t.Fatalf("dry runs %d after a refused begin, want %d", n, before)
+	}
+	noApprovals(t, h)
+}
+
+func TestApproveProofUsedWhenTTLChecked(t *testing.T) {
+	h := newApprovalHarness(t)
+	cookie := h.login()
+	begun := h.clock.Now()
+	b := h.beginOK(cookie, h.detail(cookie, kindPlan, string(testRevision)))
+	cred := h.key.get(t, b.asBegin(), iPhoneFlags)
+	// finish comes at the TTL's last instant, and time passes while it
+	// reads tailscale serve.
+	h.clock.advance(approveTTL)
+	checked := h.clock.Now()
+	h.ts.mu.Lock()
+	h.ts.onServeStatus = func() { h.clock.advance(5 * time.Second) }
+	h.ts.mu.Unlock()
+	if w := h.approveFinish(cookie, b.Ceremony, cred); w.Code != http.StatusOK {
+		t.Fatalf("approve: %d %s\n%s", w.Code, w.Body, h.logs)
+	}
+	h.lado.read(func(f *fakeLado) {
+		if len(f.planApproved) != 1 {
+			t.Fatalf("plan approvals = %+v", f.planApproved)
+		}
+		p := f.planApproved[0].proof
+		if !p.UsedAt.Equal(checked.UTC()) || p.UsedAt.After(p.ExpiresAt) || !p.ExpiresAt.Equal(begun.Add(approveTTL).UTC()) {
+			t.Fatalf("proof used %v, expires %v; want used %v, at most its expiry", p.UsedAt, p.ExpiresAt, checked.UTC())
+		}
+	})
+}

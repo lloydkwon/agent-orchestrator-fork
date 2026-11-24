@@ -115,9 +115,6 @@ const PHONE_STATUS_PATH = "/api/v1/lado/phone/status";
 const PHONE_ENABLE_PATH = "/api/v1/lado/phone/enable";
 const PHONE_LOOKUP_PATH = "/api/v1/lado/phone/pairings/lookup";
 const PHONE_PASSKEYS_PATH = "/api/v1/lado/phone/passkeys";
-// The tailnet HTTPS port the daemon serves the phone pages on before phone
-// approval was ever on (backend/internal/service/ladophone DefaultServePort).
-const PHONE_DEFAULT_PORT = 8444;
 const SETUP_ITEMS_PATH = "/api/v1/lado/setup/items";
 const SETUP_BINDINGS_PATH = "/api/v1/lado/setup/bindings";
 const SETUP_ITEM_PATH = /^\/api\/v1\/lado\/setup\/items\/([A-Za-z0-9_-]{1,128})$/;
@@ -1071,7 +1068,7 @@ async function enablePhoneApproval(
 	const t = await translator(deps);
 	const address = current.origin
 		? oneLine(current.origin)
-		: t("lado.presence.phone.enableAddressUnknown", { port: current.servePort > 0 ? current.servePort : PHONE_DEFAULT_PORT });
+		: t("lado.presence.phone.enableAddressUnknown", { port: current.servePort });
 	const detail = t("lado.presence.phone.enableDetail", { address });
 	if (!(await confirm(deps, t, t("lado.presence.phone.enableTitle"), detail, t("lado.presence.phone.turnOn")))) {
 		return { status: "cancelled" };
@@ -1438,7 +1435,12 @@ function phoneStatus(body: unknown): LadoPresencePhoneStatus | null {
 		typeof status.enabled !== "boolean" ||
 		typeof status.listening !== "boolean" ||
 		typeof status.origin !== "string" ||
-		typeof status.servePort !== "number"
+		// The port the daemon serves on, or would: it names it even before
+		// phone approval was ever on, so none is guessed here.
+		typeof status.servePort !== "number" ||
+		!Number.isInteger(status.servePort) ||
+		status.servePort < 1 ||
+		status.servePort > 65535
 	) {
 		return null;
 	}

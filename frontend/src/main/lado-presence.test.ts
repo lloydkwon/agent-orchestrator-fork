@@ -542,7 +542,8 @@ function phoneStatus(overrides: Partial<LadoPresencePhoneStatus> = {}): LadoPres
 		origin: "",
 		ownerLogin: "",
 		rpId: "",
-		servePort: 0,
+		// The daemon names the port it serves on, or would, even before it was ever on.
+		servePort: 8444,
 		pairingPending: false,
 		...overrides,
 	};
@@ -3386,13 +3387,23 @@ describe("turning phone approval on", () => {
 		expectSigned(calls[1]!, "POST", "{}");
 	});
 
-	it("names the serve port when phone approval was never on", async () => {
-		const { enablePhone, dialog } = setup({ locale: () => "ko" });
+	it("names the serve port the daemon reports when phone approval was never on", async () => {
+		const { enablePhone, dialog } = setup({ locale: () => "ko" }, { phoneStatus: () => json(200, phoneStatus({ servePort: 9443 })) });
 		await enablePhone();
 		const ko = trayCatalogs.ko;
 		expect(dialogOptions(dialog)).toMatchObject({ message: ko["lado.presence.phone.enableTitle"] });
-		expect(dialogOptions(dialog).detail).toContain("8444");
+		expect(dialogOptions(dialog).detail).toContain("9443");
+		expect(dialogOptions(dialog).detail).not.toContain("8444");
 		expect(ko["lado.presence.phone.enableTitle"]).not.toBe(trayCatalogs.en["lado.presence.phone.enableTitle"]);
+	});
+
+	it("refuses a state without a serve port rather than guessing one", async () => {
+		for (const servePort of [0, -1, 1.5, 70000]) {
+			const { enablePhone, dialog, calls } = setup({}, { phoneStatus: () => json(200, phoneStatus({ servePort })) });
+			await expect(enablePhone(), String(servePort)).resolves.toMatchObject({ status: "error", code: "LADO_PRESENCE_ANSWER_UNREADABLE" });
+			expect(dialog.showMessageBox).not.toHaveBeenCalled();
+			expect(calls.map(({ init }) => init.method)).toEqual(["GET"]);
+		}
 	});
 
 	it("refuses an untrusted sender before it reads or asks anything", async () => {

@@ -7092,6 +7092,8 @@ export interface components {
             retainedContent?: null | number[];
             text: string;
         };
+        /** @description The empty object {}; the presence proof signs exactly these bytes. */
+        EnableLadoPhoneRequest: Record<string, never>;
         EndpointsResponse: {
             endpoints: components["schemas"]["MobileEndpoint"][];
         };
@@ -8366,6 +8368,7 @@ export interface components {
             pairingPending: boolean;
             /** @description WebAuthn relying party id: the machine's MagicDNS name. */
             rpId: string;
+            /** @description The tailnet HTTPS port phone approval serves on: the one turning it on fixed while it is on, otherwise the one turning it on would use (default 8444). */
             servePort: number;
             supported: boolean;
         };
@@ -17409,7 +17412,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EnableLadoPhoneRequest"];
+            };
+        };
         responses: {
             /** @description OK */
             200: {

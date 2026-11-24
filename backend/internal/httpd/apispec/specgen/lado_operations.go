@@ -8,9 +8,27 @@ import (
 	"net/http"
 	"slices"
 
+	"github.com/swaggest/jsonschema-go"
+
 	"github.com/aoagents/agent-orchestrator/backend/internal/httpd/controllers"
 	"github.com/aoagents/agent-orchestrator/backend/internal/httpd/envelope"
 )
+
+// ladoEmptyBody is the body of a call that reads exactly the empty object:
+// controllers.EnableLadoPhoneRequest has no fields, so swaggest would leave
+// the request body out, while the handler reads "{}" strictly and the
+// presence proof signs those bytes.
+type ladoEmptyBody map[string]struct{}
+
+// JSONSchema is an object without properties.
+func (ladoEmptyBody) JSONSchema() (jsonschema.Schema, error) {
+	none := false
+	var s jsonschema.Schema
+	s.AddType(jsonschema.Object)
+	s.WithAdditionalProperties(jsonschema.SchemaOrBool{TypeBoolean: &none})
+	s.WithDescription("The empty object {}; the presence proof signs exactly these bytes.")
+	return s, nil
+}
 
 func init() {
 	for defaultName, clean := range ladoSchemaNames {
@@ -19,6 +37,7 @@ func init() {
 }
 
 var ladoSchemaNames = map[string]string{ //nolint:gosec // G101: schema names, not credentials.
+	"SpecgenLadoEmptyBody":                         "EnableLadoPhoneRequest",
 	"ControllersLadoProjectIDParam":                "LadoProjectIDParam",
 	"ControllersLadoProjectSettingsResponse":       "LadoProjectSettingsResponse",
 	"ControllersUpdateLadoProjectSettingsRequest":  "UpdateLadoProjectSettingsRequest",
@@ -929,7 +948,7 @@ func ladoPhoneOperations() []operation {
 			method: http.MethodPost, path: "/api/v1/lado/phone/enable", id: "enableLadoPhone", tag: "lado",
 			summary:    "Turn phone approval on with a human-presence proof (phone_approval.on, subject phone-approval): opens the socket and points tailscale serve at it; refused off Linux, when tailscaled runs as the daemon's user, or when the port serves something else or has funnel on",
 			pathParams: presence,
-			reqBody:    controllers.EnableLadoPhoneRequest{},
+			reqBody:    ladoEmptyBody{},
 			resps:      ladoResps(http.StatusOK, controllers.LadoPhoneStatusResponse{}, http.StatusBadRequest, http.StatusForbidden, http.StatusConflict, http.StatusServiceUnavailable),
 		},
 		{

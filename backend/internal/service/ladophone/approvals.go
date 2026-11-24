@@ -141,8 +141,9 @@ func (s *Service) handleApprovals(w http.ResponseWriter, r *http.Request) {
 }
 
 // pendingApprovals lists the plans and integrations waiting for approval in
-// the LADO-mode projects: a task whose latest revision is valid and has no
-// approval, and a task whose run's PRs are verified and wait for the
+// the LADO-mode projects: a task in a state planWaits names whose latest
+// revision is valid, with a line saying why it waits again when it was
+// approved before, and a task whose run's PRs are verified and wait for the
 // integration approval.
 func (s *Service) pendingApprovals(ctx context.Context) ([]approvalItem, error) {
 	items := []approvalItem{}
@@ -162,14 +163,17 @@ func (s *Service) pendingApprovals(ctx context.Context) ([]approvalItem, error) 
 		}
 		for _, task := range tasks {
 			item := approvalItem{Title: oneLine(task.Issue.Title), Project: string(project), Issue: oneLine(string(task.IssueRef))}
-			switch task.StateAt(now) {
-			case domain.LadoTaskPlanned:
+			switch state := task.StateAt(now); {
+			case planWaits(state):
 				if !task.Plan.Latest.Valid() {
 					continue
 				}
 				item.Kind, item.ID = kindPlan, string(task.Plan.Latest.ID)
 				item.Line = fmt.Sprintf("계획 리비전 %d", task.Plan.Latest.Number)
-			case domain.LadoTaskIntegrationPending:
+				if why := planStateLine(task, state); why != "" {
+					item.Line += " · " + why
+				}
+			case state == domain.LadoTaskIntegrationPending:
 				open := openPRs(task.Execution)
 				if len(open) == 0 {
 					continue
@@ -215,6 +219,8 @@ type planFacts struct {
 	binding    planBinding
 	approvable bool
 	reason     string
+	// stateLine says why the plan waits again after an approval.
+	stateLine string
 }
 
 func (s *Service) planFacts(ctx context.Context, id domain.LadoPlanRevisionID) (planFacts, error) {
@@ -245,29 +251,72 @@ func (s *Service) planFacts(ctx context.Context, id domain.LadoPlanRevisionID) (
 		binding: planBinding{RevisionID: string(view.Revision.ID), SHA256: view.Revision.SHA256, PolicySHA256: eff.SHA256},
 	}
 	f.approvable, f.reason = s.planApprovable(view, rules)
+	f.stateLine = planStateLine(view.Task, view.Task.StateAt(s.now()))
 	return f, nil
 }
 
+// planWaits reports whether a task in state waits for its plan's approval,
+// as the desktop's plan lanes show it: planned, or approved before and
+// needing review, blocked by its rules or failed. The phone lists these.
+func planWaits(state domain.LadoTaskState) bool {
+	switch state {
+	case domain.LadoTaskPlanned, domain.LadoTaskReviewRequired, domain.LadoTaskBlocked, domain.LadoTaskFailed:
+		return true
+	}
+	return false
+}
+
+// planStateLine says why a task's plan waits again after an approval, empty
+// for a plan that waits for its first one.
+func planStateLine(task domain.LadoTask, state domain.LadoTaskState) string {
+	switch state {
+	case domain.LadoTaskReviewRequired:
+		switch task.StateReason() {
+		case domain.LadoReviewRulesChanged:
+			return "규칙이 바뀌어 다시 승인 필요"
+		case domain.LadoReviewIssueEdited:
+			return "이슈가 바뀌어 다시 승인 필요"
+		}
+		return "다시 승인 필요"
+	case domain.LadoTaskBlocked:
+		return "막는 규칙 있음"
+	case domain.LadoTaskFailed:
+		return "실패 — 다시 승인 가능"
+	}
+	return ""
+}
+
 // planApprovable is the phone's own check before it asks for a signature;
-// the task service checks again when it approves.
+// the task service checks again when it approves. As on the desktop, an
+// approved plan is approved again when it needs review or its run failed;
+// a blocked one is not, since approving it again signs the same rules.
 func (s *Service) planApprovable(view ladotask.PlanView, rules ruleFacts) (bool, string) {
-	switch state := view.Task.StateAt(s.now()); {
+	state := view.Task.StateAt(s.now())
+	switch {
 	case !view.Latest:
 		return false, "더 새 계획이 있습니다. 최신 계획을 열어 다시 보세요."
 	case !view.Revision.Valid():
 		return false, "이 계획에는 문제가 있어 승인할 수 없습니다. 먼저 고쳐 달라고 하세요."
-	case view.Approved:
+	case !planWaits(state):
+		if view.Approved {
+			return false, "이미 승인한 계획입니다."
+		}
+		return false, "지금은 이 작업의 계획을 승인할 수 없습니다 (상태: " + string(state) + ")."
+	case view.Approved && state == domain.LadoTaskBlocked:
+		return false, "막는 규칙이 있어 다시 승인해도 같은 규칙에 서명합니다. 데스크톱에서 규칙이나 계획을 고친 뒤 승인하세요."
+	case view.Approved && state == domain.LadoTaskPlanned:
 		return false, "이미 승인한 계획입니다."
 	case rules.sha256 == "":
 		return false, "LADO 가 이 작업의 규칙을 읽지 못해 승인할 수 없습니다."
-	case state != domain.LadoTaskPlanned && state != domain.LadoTaskReviewRequired && state != domain.LadoTaskBlocked && state != domain.LadoTaskFailed:
-		return false, "지금은 이 작업의 계획을 승인할 수 없습니다 (상태: " + string(state) + ")."
 	}
 	return true, ""
 }
 
 func (f planFacts) detail() approvalDetail {
 	sum := planSummary(f.view, f.rules)
+	if f.stateLine != "" {
+		sum.Lines = append([]string{f.stateLine}, sum.Lines...)
+	}
 	return approvalDetail{
 		Kind: kindPlan, ID: f.binding.RevisionID, Title: sum.Title, Lines: sum.Lines, AgentText: sum.AgentText,
 		Approvable: f.approvable, Reason: f.reason, Binding: f.binding,
@@ -356,6 +405,8 @@ func (s *Service) integrationFacts(ctx context.Context, phone string, session do
 	switch {
 	case f.desktopOnly:
 		f.reason = "운영 DB SQL 이 있어 데스크톱에서만 승인합니다."
+	case slices.ContainsFunc(f.binding.PRs, func(pr integrationPRBinding) bool { return !validPRURL(pr.URL) }):
+		f.reason = "LADO 가 PR 주소를 읽지 못해 폰에서 승인할 수 없습니다. 데스크톱에서 승인하세요."
 	case notReady:
 		f.reason = "LADO 가 아직 검증 중이거나 검사가 실패했습니다. 통과한 뒤 승인하세요."
 	default:

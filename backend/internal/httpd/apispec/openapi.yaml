@@ -4142,6 +4142,12 @@ paths:
           description: Human-presence proof v1.<nonce>.<expires>.<mac>, signed by
             the AO desktop app over the method, path and body.
           type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EnableLadoPhoneRequest'
+        required: true
       responses:
         "200":
           content:
@@ -21181,6 +21187,10 @@ components:
       required:
       - text
       type: object
+    EnableLadoPhoneRequest:
+      additionalProperties: false
+      description: The empty object {}; the presence proof signs exactly these bytes.
+      type: object
     EndpointsResponse:
       properties:
         endpoints:
@@ -24347,6 +24357,9 @@ components:
           description: 'WebAuthn relying party id: the machine''s MagicDNS name.'
           type: string
         servePort:
+          description: 'The tailnet HTTPS port phone approval serves on: the one turning
+            it on fixed while it is on, otherwise the one turning it on would use
+            (default 8444).'
           type: integer
         supported:
           type: boolean

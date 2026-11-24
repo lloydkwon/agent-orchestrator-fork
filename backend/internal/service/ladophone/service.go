@@ -121,12 +121,15 @@ type Status struct {
 	// Supported is false off Linux, where phone approval cannot be turned on.
 	Supported bool
 	Enabled   bool
-	// RPID, Origin, OwnerLogin and ServePort are what turning it on fixed;
-	// they stay after it is turned off.
+	// RPID, Origin and OwnerLogin are what turning it on fixed; they stay
+	// after it is turned off.
 	RPID       string
 	Origin     string
 	OwnerLogin string
-	ServePort  int
+	// ServePort is the tailnet HTTPS port phone approval serves on: the one
+	// turning it on fixed while it is on, otherwise the one turning it on
+	// would use, so it is known before it was ever on.
+	ServePort int
 	// Listening says whether the socket's server runs in this daemon.
 	Listening bool
 	// EnrollURL is the page a phone opens to make a passkey.
@@ -435,8 +438,11 @@ func (s *Service) statusUnlocked(settings domain.LadoPhoneSettings) Status {
 		RPID:       settings.RPID,
 		Origin:     settings.Origin,
 		OwnerLogin: settings.OwnerLogin,
-		ServePort:  settings.ServePort,
+		ServePort:  s.port,
 		Listening:  s.server != nil,
+	}
+	if settings.Enabled && settings.ServePort != 0 {
+		st.ServePort = settings.ServePort
 	}
 	if settings.Enabled && settings.Origin != "" {
 		st.EnrollURL = settings.Origin + "/enroll"

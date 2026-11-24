@@ -22,7 +22,7 @@ const off: phone.LadoPhoneStatus = {
 	origin: "",
 	ownerLogin: "",
 	rpId: "",
-	servePort: 0,
+	servePort: 8444,
 	pairingPending: false,
 };
 const on: phone.LadoPhoneStatus = {
@@ -113,6 +113,15 @@ describe("LadoPhoneApprovalSection", () => {
 		await waitFor(() => expect(screen.getByRole("switch", { name: "Approve on phone" })).toBeChecked());
 		expect(screen.getByText(`On at ${ORIGIN}`)).toBeInTheDocument();
 		expect(post()).not.toHaveBeenCalled();
+	});
+
+	it("in a browser, sends the daemon the empty object it reads", async () => {
+		const user = userEvent.setup();
+		// No desktop main process to ask: the call goes to the daemon directly.
+		enable().mockResolvedValue(null as never);
+		renderSection();
+		await user.click(await phoneSwitch());
+		await waitFor(() => expect(post()).toHaveBeenCalledWith("/api/v1/lado/phone/enable", { body: {} }));
 	});
 
 	it("keeps it off after a cancelled confirmation, and shows a refusal", async () => {
