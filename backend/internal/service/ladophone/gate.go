@@ -7,6 +7,7 @@ import (
 	"mime"
 	"net/http"
 	"net/netip"
+	"regexp"
 	"strings"
 )
 
@@ -53,20 +54,51 @@ func (g GateConfig) Origin() string {
 }
 
 // Routes are the only requests the phone socket serves, keyed
-// "<METHOD> <path>" with the exact path.
+// "<METHOD> <path>" with the exact path. A path may end in one "/{id}"
+// segment, which matches a single segment of idSegment's characters and
+// reaches the handler as r.PathValue("id").
 type Routes map[string]http.Handler
+
+// idParam is the one path parameter a route may end in.
+const idParam = "{id}"
+
+// idSegment is what an {id} segment may hold: a LADO revision or session id.
+var idSegment = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,254}$`)
 
 // Handler is the phone socket's whole HTTP surface: the gate, then routes
 // matched exactly. Anything else is 404; no shared API router is mounted.
 func Handler(cfg GateConfig, log *slog.Logger, routes Routes) http.Handler {
 	return Gate(cfg, log, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		h, ok := routes[r.Method+" "+r.URL.Path]
-		if !ok || r.URL.RawPath != "" {
+		h, ok := routes.match(r)
+		if !ok {
 			http.Error(w, "not found", http.StatusNotFound)
 			return
 		}
 		h.ServeHTTP(w, r)
 	}))
+}
+
+// match finds the route of r: its exact path, else a route ending in /{id}
+// whose last segment is a valid id. Escaped paths and braces never match.
+func (routes Routes) match(r *http.Request) (http.Handler, bool) {
+	path := r.URL.Path
+	if r.URL.RawPath != "" || strings.ContainsAny(path, "{}") {
+		return nil, false
+	}
+	if h, ok := routes[r.Method+" "+path]; ok {
+		return h, true
+	}
+	at := strings.LastIndexByte(path, '/')
+	if at < 0 {
+		return nil, false
+	}
+	id := path[at+1:]
+	h, ok := routes[r.Method+" "+path[:at+1]+idParam]
+	if !ok || !idSegment.MatchString(id) || strings.Contains(id, "..") {
+		return nil, false
+	}
+	r.SetPathValue("id", id)
+	return h, true
 }
 
 // Gate refuses every request that did not come from the owner's phone through

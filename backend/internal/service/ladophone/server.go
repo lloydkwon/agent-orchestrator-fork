@@ -31,6 +31,15 @@ func (s *Service) phoneHandler(gate GateConfig) http.Handler {
 		"GET /enroll.css":     staticFile("static/enroll.css", "text/css; charset=utf-8"),
 		"POST /enroll/begin":  http.HandlerFunc(s.handleEnrollBegin),
 		"POST /enroll/finish": http.HandlerFunc(s.handleEnrollFinish),
+
+		"POST /login/begin":  http.HandlerFunc(s.handleLoginBegin),
+		"POST /login/finish": http.HandlerFunc(s.handleLoginFinish),
+
+		"GET /api/approvals":                  http.HandlerFunc(s.handleApprovals),
+		"GET /api/approvals/plan/{id}":        http.HandlerFunc(s.handlePlanDetail),
+		"GET /api/approvals/integration/{id}": http.HandlerFunc(s.handleIntegrationDetail),
+		"POST /api/approve/begin":             http.HandlerFunc(s.handleApproveBegin),
+		"POST /api/approve/finish":            http.HandlerFunc(s.handleApproveFinish),
 	})
 }
 

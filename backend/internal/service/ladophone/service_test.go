@@ -48,17 +48,28 @@ type phoneHarness struct {
 
 func newPhoneHarness(t *testing.T) *phoneHarness {
 	t.Helper()
+	return newPhoneHarnessWith(t, nil)
+}
+
+// newPhoneHarnessWith is newPhoneHarness with edit changing the options
+// before the service is made.
+func newPhoneHarnessWith(t *testing.T, edit func(*Options)) *phoneHarness {
+	t.Helper()
 	dataDir := t.TempDir()
 	store := sqlitetest.MustOpenAt(t, dataDir)
 	state := shortTempDir(t)
 	ts := &fakeTailscale{self: selfJSON("Running"), stateful: true}
 	log, logs := testLogger()
 	clock := &testClock{now: time.Date(2026, 11, 24, 9, 0, 0, 0, time.UTC)}
-	s := New(Options{
+	opts := Options{
 		Store: store, StateDir: state, Tailscale: ts.run, Now: clock.Now, Logger: log,
 		TailscaledUID: func() (int, error) { return os.Getuid() + 1, nil },
 		goos:          "linux",
-	})
+	}
+	if edit != nil {
+		edit(&opts)
+	}
+	s := New(opts)
 	t.Cleanup(s.Close)
 	return &phoneHarness{t: t, s: s, store: store, ts: ts, clock: clock, logs: logs, dataDir: dataDir, state: state}
 }

@@ -45,6 +45,9 @@ type Store interface {
 	InsertLadoPhonePasskey(ctx context.Context, passkey domain.LadoPhonePasskey, proof domain.LadoPresenceProof, event domain.LadoAuditEvent) error
 	LadoPhonePasskeys(ctx context.Context) ([]domain.LadoPhonePasskey, error)
 	RevokeLadoPhonePasskey(ctx context.Context, id string, event domain.LadoAuditEvent) (bool, error)
+	LadoPhonePasskeyByCredentialID(ctx context.Context, credentialID []byte) (domain.LadoPhonePasskey, bool, error)
+	RecordLadoPhonePasskeyUse(ctx context.Context, id string, signCount uint32, cloneWarning bool, at time.Time) error
+	AppendLadoAuditEvent(ctx context.Context, ev domain.LadoAuditEvent) (domain.LadoAuditEvent, error)
 }
 
 // Options configures New.
@@ -64,6 +67,17 @@ type Options struct {
 	TailscaledUID func() (int, error)
 	Now           func() time.Time
 	Logger        *slog.Logger
+
+	// Projects, Tasks, Rules, Executions and Integrations are where the
+	// approvals waiting come from and where an approval goes. Without them
+	// the phone can log in but lists and approves nothing.
+	Projects     LadoProjects
+	Tasks        Tasks
+	Rules        Rules
+	Executions   Executions
+	Integrations Integrations
+	// Notifier raises alerts on the desktop; nil only logs them.
+	Notifier Notifier
 
 	// goos and selfUID stand in for runtime.GOOS and os.Getuid in tests.
 	goos    string
@@ -90,6 +104,15 @@ type Service struct {
 
 	ceremonies *ceremonyTable
 	enroll     *enrollment
+	sessions   *sessionTable
+	guard      *loginGuard
+
+	projects     LadoProjects
+	tasks        Tasks
+	rules        Rules
+	executions   Executions
+	integrations Integrations
+	notifier     Notifier
 }
 
 // Status is phone approval's state for the desktop app.
@@ -128,6 +151,14 @@ func New(opts Options) *Service {
 		goos:          opts.goos,
 		selfUID:       opts.selfUID,
 		ceremonies:    newCeremonyTable(),
+		sessions:      newSessionTable(),
+		guard:         &loginGuard{},
+		projects:      opts.Projects,
+		tasks:         opts.Tasks,
+		rules:         opts.Rules,
+		executions:    opts.Executions,
+		integrations:  opts.Integrations,
+		notifier:      opts.Notifier,
 	}
 	if s.tailscaledUID == nil {
 		s.tailscaledUID = TailscaledUID
@@ -258,6 +289,7 @@ func (s *Service) Enable(ctx context.Context, proof domain.LadoPresenceProof) (S
 		return Status{}, s.storeError(err)
 	}
 	s.enroll.close()
+	s.endSessions()
 	s.log.Info("lado phone: phone approval on", "origin", settings.Origin, "owner", settings.OwnerLogin)
 	return s.statusUnlocked(stored), nil
 }
@@ -270,6 +302,7 @@ func (s *Service) Disable(ctx context.Context) (Status, error) {
 	defer s.mu.Unlock()
 	s.stopLocked()
 	s.enroll.close()
+	s.endSessions()
 	stored, changed, err := s.store.DisableLadoPhone(ctx, s.event(AuditDisabled, "daemon", "phone_approval", map[string]any{}))
 	if err != nil {
 		s.log.Error("lado phone: record turning off", "error", err)
@@ -299,6 +332,15 @@ func (s *Service) Close() {
 	defer s.mu.Unlock()
 	s.stopLocked()
 	s.enroll.close()
+	s.endSessions()
+}
+
+// endSessions logs every phone out and drops the logins and approvals in
+// progress.
+func (s *Service) endSessions() {
+	s.sessions.clear()
+	s.ceremonies.drop(ceremonyLogin)
+	s.ceremonies.drop(ceremonyApprove)
 }
 
 // Passkeys returns every enrolled passkey, revoked ones too.
@@ -315,6 +357,10 @@ func (s *Service) Passkeys(ctx context.Context) ([]domain.LadoPhonePasskey, erro
 // needs no proof.
 func (s *Service) RevokePasskey(ctx context.Context, id string) (bool, error) {
 	revoked, err := s.store.RevokeLadoPhonePasskey(ctx, id, s.event(AuditPasskeyRevoked, "phone_passkey", id, map[string]any{}))
+	if err == nil {
+		// Its sessions end even when it was revoked already.
+		s.sessions.dropPasskey(id)
+	}
 	if errors.Is(err, domain.ErrLadoPhonePasskeyNotFound) {
 		return false, apierr.NotFound("LADO_PHONE_PASSKEY_NOT_FOUND", "No such phone passkey")
 	}

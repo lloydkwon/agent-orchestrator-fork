@@ -23,11 +23,15 @@ const (
 	maxCeremonies = 16
 )
 
-// ceremonyKind keeps one kind of ceremony from finishing as another. Step 5
-// adds login and approval ceremonies.
+// ceremonyKind keeps one kind of ceremony from finishing as another: a
+// login's assertion never finishes an approval, nor the other way round.
 type ceremonyKind string
 
-const ceremonyEnroll ceremonyKind = "enroll"
+const (
+	ceremonyEnroll  ceremonyKind = "enroll"
+	ceremonyLogin   ceremonyKind = "login"
+	ceremonyApprove ceremonyKind = "approve"
+)
 
 type ceremony struct {
 	kind ceremonyKind
@@ -38,6 +42,13 @@ type ceremony struct {
 	rpID    string
 	data    webauthn.SessionData
 	started time.Time
+
+	// An approval ceremony also holds the phone session that began it, the
+	// one passkey that may sign it and what it approves.
+	session      string
+	passkeyID    string
+	credentialID []byte
+	approval     boundApproval
 }
 
 type ceremonyTable struct {
@@ -49,10 +60,22 @@ func newCeremonyTable() *ceremonyTable {
 	return &ceremonyTable{m: map[string]ceremony{}}
 }
 
-// begin stores c and returns its id.
+// begin stores c under a new id and returns the id.
 func (t *ceremonyTable) begin(c ceremony) string {
+	return t.put(randomToken(), c)
+}
+
+// put stores c under id, an id the caller made with randomToken because the
+// ceremony's challenge names it. Ceremonies older than ceremonyTTL go first,
+// then the oldest while the table is full.
+func (t *ceremonyTable) put(id string, c ceremony) string {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	for old, have := range t.m {
+		if c.started.Sub(have.started) > ceremonyTTL {
+			delete(t.m, old)
+		}
+	}
 	for len(t.m) >= maxCeremonies {
 		oldest := ""
 		for id, have := range t.m {
@@ -62,7 +85,6 @@ func (t *ceremonyTable) begin(c ceremony) string {
 		}
 		delete(t.m, oldest)
 	}
-	id := randomToken()
 	t.m[id] = c
 	return id
 }
@@ -89,6 +111,17 @@ func (t *ceremonyTable) drop(kind ceremonyKind) {
 	defer t.mu.Unlock()
 	for id, c := range t.m {
 		if c.kind == kind {
+			delete(t.m, id)
+		}
+	}
+}
+
+// dropSession removes every ceremony of kind that the phone session began.
+func (t *ceremonyTable) dropSession(kind ceremonyKind, session string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	for id, c := range t.m {
+		if c.kind == kind && c.session == session {
 			delete(t.m, id)
 		}
 	}

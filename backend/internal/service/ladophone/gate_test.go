@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
+	"net/url"
 	"strings"
 	"testing"
 )
@@ -266,5 +267,49 @@ func TestPhoneRoutesExactOnly(t *testing.T) {
 		r.Header.Set("Tailscale-User-Login", "other@example.com")
 	})); code != http.StatusForbidden {
 		t.Fatalf("stranger GET /enroll = %d, want 403", code)
+	}
+}
+
+func TestPhoneRoutesOneIDSegment(t *testing.T) {
+	log, _ := testLogger()
+	var got string
+	h := Handler(testGateConfig(), log, Routes{
+		"GET /api/approvals/plan/{id}": http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			got = r.PathValue("id")
+			w.WriteHeader(http.StatusOK)
+		}),
+	})
+	serve := func(path string) int {
+		t.Helper()
+		got = ""
+		u, err := url.Parse(path)
+		if err != nil {
+			t.Fatalf("parse %q: %v", path, err)
+		}
+		r := phoneRequest(http.MethodGet, "/", nil)
+		r.URL = u
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		return w.Code
+	}
+	for _, id := range []string{"rev-2", "lado-rev_9", "sess.1"} {
+		if code := serve("/api/approvals/plan/" + id); code != http.StatusOK || got != id {
+			t.Errorf("GET .../plan/%s = %d, id %q", id, code, got)
+		}
+	}
+	for _, path := range []string{
+		"/api/approvals/plan/", "/api/approvals/plan/..", "/api/approvals/plan/a..b", "/api/approvals/plan/.x",
+		"/api/approvals/plan/a/b", "/api/approvals/plan/a%2Fb", "/api/approvals/plan/{id}", "/api/approvals/plan/%7Bid%7D",
+		"/api/approvals/plan", "/api/approvals/plan/" + strings.Repeat("a", 256), "/api/approvals/plan/a b",
+	} {
+		if code := serve(path); code != http.StatusNotFound || got != "" {
+			t.Errorf("GET %s = %d (id %q), want 404", path, code, got)
+		}
+	}
+	if w := httptest.NewRecorder(); true {
+		h.ServeHTTP(w, phoneRequest(http.MethodPost, "/api/approvals/plan/rev-2", nil))
+		if w.Code != http.StatusNotFound {
+			t.Errorf("POST to a GET id route = %d", w.Code)
+		}
 	}
 }
