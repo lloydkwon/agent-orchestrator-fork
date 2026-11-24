@@ -21,66 +21,13 @@
     msg.dataset.tone = tone || "";
   }
 
-  // base64url <-> ArrayBuffer for WebAuthn's byte fields.
-  function toBuf(s) {
-    let b = s.replace(/-/g, "+").replace(/_/g, "/");
-    while (b.length % 4) b += "=";
-    const bin = atob(b);
-    const out = new Uint8Array(bin.length);
-    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-    return out.buffer;
-  }
-  function fromBuf(buf) {
-    const bytes = new Uint8Array(buf);
-    let bin = "";
-    for (const b of bytes) bin += String.fromCharCode(b);
-    return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-  }
-  function creationOptions(o) {
-    const pk = o.publicKey;
-    return {
-      ...pk,
-      challenge: toBuf(pk.challenge),
-      user: { ...pk.user, id: toBuf(pk.user.id) },
-      excludeCredentials: (pk.excludeCredentials || []).map((c) => ({ ...c, id: toBuf(c.id) })),
-    };
-  }
-  function attestationJSON(cred) {
-    const r = cred.response;
-    return {
-      id: cred.id, rawId: fromBuf(cred.rawId), type: cred.type,
-      authenticatorAttachment: cred.authenticatorAttachment || undefined,
-      response: {
-        attestationObject: fromBuf(r.attestationObject),
-        clientDataJSON: fromBuf(r.clientDataJSON),
-        transports: typeof r.getTransports === "function" ? r.getTransports() : [],
-      },
-      clientExtensionResults: cred.getClientExtensionResults(),
-    };
-  }
+  const W = window.LadoWebAuthn;
 
   async function call(path, body) {
-    let res;
-    try {
-      res = await fetch(path, {
-        method: "POST", cache: "no-store", credentials: "same-origin",
-        headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
-      });
-    } catch (_) {
-      throw new Error("LADO 의 답을 받지 못했습니다. 폰의 Tailscale 연결을 확인하세요.");
-    }
-    if (res.status === 403) throw new Error("접근이 거절됐습니다. 폰 승인을 켠 Tailscale 계정으로 열었는지 확인하세요.");
-    if (!res.ok) throw new Error(`LADO 오류 ${res.status}`);
-    return res.json();
-  }
-
-  function credentialError(e) {
-    switch (e && e.name) {
-      case "NotAllowedError": return "취소했거나 시간이 지났습니다. 다시 누르세요.";
-      case "InvalidStateError": return "이 폰의 패스키는 이미 등록되어 있습니다.";
-      case "SecurityError": return "이 주소에서는 패스키를 쓸 수 없습니다. 데스크톱 앱이 보여 준 https 주소로 여세요.";
-      default: return `패스키 창이 실패했습니다: ${(e && e.name) || "오류"}`;
-    }
+    const { status, body: data } = await W.send("POST", path, body);
+    if (status === 403) throw new Error(W.FORBIDDEN);
+    if (status !== 200 || !data) throw new Error(`LADO 오류 ${status}`);
+    return data;
   }
 
   // Safari may open the passkey sheet only right at the tap, so the
@@ -103,7 +50,7 @@
         prepareFailed = true;
         return;
       }
-      ready = { ceremony: begun.ceremony, publicKey: creationOptions(begun.options), at: Date.now() };
+      ready = { ceremony: begun.ceremony, publicKey: W.creationOptions(begun.options), at: Date.now() };
       start.disabled = false;
       if (prepareFailed) say("", "");
       prepareFailed = false;
@@ -137,10 +84,10 @@
       try {
         cred = await pending;
       } catch (e) {
-        say(credentialError(e), "stop");
+        say(W.credentialError(e), "stop");
         return;
       }
-      const done = await call("/enroll/finish", { ceremony: r.ceremony, credential: attestationJSON(cred) });
+      const done = await call("/enroll/finish", { ceremony: r.ceremony, credential: W.attestationJSON(cred) });
       if (done.result === "ok") {
         $("code").textContent = done.code;
         $("fingerprint").textContent = done.fingerprint;
@@ -158,7 +105,7 @@
     }
   }
 
-  if (!window.PublicKeyCredential || !navigator.credentials) {
+  if (!W.supported()) {
     say("이 브라우저는 패스키를 지원하지 않습니다.", "stop");
     return;
   }

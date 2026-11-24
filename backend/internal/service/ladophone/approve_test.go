@@ -56,6 +56,13 @@ func TestApprovalDetailsBindWhatTheyShow(t *testing.T) {
 		ib.PRs[0].VerificationSHA256 != want.SHA256 || !slices.Equal(ib.PRs[0].Confirm, []string{domain.LadoCodeOutsidePlan}) {
 		t.Fatalf("integration detail = %+v, binding %s", di, di.Binding)
 	}
+	// The details carry Go's lines, the plan apart as the worker's text.
+	if d.Title != "이 계획을 승인할까요?" || len(d.Lines) == 0 || d.Lines[0] != "로그인 화면을 더한다" || d.AgentText != "# 계획\n로그인을 더한다.\n" {
+		t.Fatalf("plan detail summary = %q %q %q", d.Title, d.Lines, d.AgentText)
+	}
+	if di.Title != "통합을 승인할까요? PR #7 → main" || !slices.Contains(di.Lines, "계획 밖 변경 경로 (1): docs/notes.md") || di.Next == "" || di.AgentText != "" {
+		t.Fatalf("integration detail summary = %q %q %q", di.Title, di.Lines, di.Next)
+	}
 	// Opening an integration runs one dry run of exactly its open PR.
 	h.lado.read(func(f *fakeLado) {
 		if len(f.dryRuns) != 1 || len(f.dryRuns[0].PRs) != 1 || f.dryRuns[0].PRs[0].PRURL != testPRURL || f.dryRuns[0].PRs[0].HeadSHA != testHead {

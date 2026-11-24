@@ -1,0 +1,40 @@
+:root {
+  color-scheme: light dark;
+  font-family: system-ui, sans-serif;
+  --line: color-mix(in srgb, currentColor 18%, transparent);
+  --muted: color-mix(in srgb, currentColor 62%, transparent);
+  --stop: #c0392b;
+  --ok: #1e8449;
+}
+body { margin: 0; padding: 1rem 1rem calc(1.5rem + env(safe-area-inset-bottom)); line-height: 1.5; }
+main { max-width: 32rem; margin: 0 auto; }
+h1 { font-size: 1.2rem; margin: 0 0 0.5rem; }
+h2 { font-size: 1.1rem; margin: 0.75rem 0 0.5rem; overflow-wrap: anywhere; }
+[hidden] { display: none !important; }
+button {
+  font: inherit; font-size: 1.05rem; padding: 0.8rem 1rem; width: 100%;
+  border-radius: 0.6rem; border: 1px solid var(--line); cursor: pointer;
+}
+button:disabled { opacity: 0.55; cursor: default; }
+button.secondary { font-size: 0.95rem; padding: 0.55rem 0.9rem; width: auto; }
+button.link { width: auto; border: 0; background: none; padding: 0.25rem 0; color: inherit; font-size: 0.95rem; }
+#msg:empty { display: none; }
+#msg { padding: 0.5rem 0.75rem; border-radius: 0.5rem; border: 1px solid var(--line); }
+#msg[data-tone="stop"] { color: var(--stop); border-color: var(--stop); }
+#msg[data-tone="ok"] { color: var(--ok); border-color: var(--ok); }
+.bar { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
+.items { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.6rem; }
+.items button { text-align: start; display: grid; gap: 0.15rem; width: 100%; }
+.kind { font-size: 0.8rem; font-weight: 700; color: var(--muted); }
+.item-title { font-weight: 600; overflow-wrap: anywhere; }
+.item-line, .item-where { font-size: 0.9rem; color: var(--muted); overflow-wrap: anywhere; }
+.facts { border: 1px solid var(--line); border-radius: 0.6rem; padding: 0.6rem 0.8rem; }
+.facts p { margin: 0.15rem 0; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.facts .gap { height: 0.6rem; }
+.next { font-size: 0.95rem; }
+.agent { margin: 0.75rem 0; border: 1px dashed var(--line); border-radius: 0.6rem; padding: 0.5rem 0.8rem; }
+.agent summary { cursor: pointer; font-weight: 600; }
+.agent-note { font-size: 0.85rem; color: var(--muted); }
+.agent pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 0.85rem; max-height: 60vh; overflow: auto; margin: 0; }
+.reason, .desktop-only { color: var(--stop); font-weight: 600; }
+.actions { display: grid; gap: 0.6rem; margin-top: 0.75rem; }

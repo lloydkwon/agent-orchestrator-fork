@@ -26,6 +26,11 @@ var staticFiles embed.FS
 // phoneHandler is everything the phone socket serves under gate.
 func (s *Service) phoneHandler(gate GateConfig) http.Handler {
 	return Handler(gate, s.log, Routes{
+		"GET /":            staticFile("static/index.html", "text/html; charset=utf-8"),
+		"GET /app.js":      staticFile("static/app.js", "text/javascript; charset=utf-8"),
+		"GET /app.css":     staticFile("static/app.css", "text/css; charset=utf-8"),
+		"GET /webauthn.js": staticFile("static/webauthn.js", "text/javascript; charset=utf-8"),
+
 		"GET /enroll":         staticFile("static/enroll.html", "text/html; charset=utf-8"),
 		"GET /enroll.js":      staticFile("static/enroll.js", "text/javascript; charset=utf-8"),
 		"GET /enroll.css":     staticFile("static/enroll.css", "text/css; charset=utf-8"),
