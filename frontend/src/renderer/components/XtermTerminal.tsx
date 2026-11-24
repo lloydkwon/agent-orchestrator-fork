@@ -1478,7 +1478,12 @@ export function XtermTerminal(props: XtermTerminalProps) {
 			oscColorForwarder.push(data);
 			cursorPositionForwarder.push(data);
 		});
-		const keyInput = term.onKey(({ key }) => emitUserInput(key, "keyboard"));
+		let imeHandledKey = false;
+		let composedText = "";
+		const keyInput = term.onKey(({ key }) => {
+			imeHandledKey = false;
+			emitUserInput(key, "keyboard");
+		});
 
 		// Translate wheel motion into SGR wheel reports for the pane (see
 		// sgrWheelReport), one report per scrolled line. WheelEvent.deltaMode
@@ -1553,10 +1558,33 @@ export function XtermTerminal(props: XtermTerminalProps) {
 			pasteText(text);
 		};
 		const compositionInput = (event: CompositionEvent) => {
+			composedText = event.data;
 			emitUserInput(event.data, "composition");
+		};
+		// An input method may commit text outside the composition: ibus-hangul
+		// clears its preedit first, so compositionend is empty and the syllable
+		// follows as a plain insertText. Take inserted text only while the last
+		// keydown was one the input method handled (229): xterm reports every other
+		// key through onKey. Listen on the host, not the shell, so text typed in the
+		// terminal search box stays out of the PTY.
+		const inputMethodKey = (event: KeyboardEvent) => {
+			imeHandledKey = event.keyCode === 229;
+			composedText = "";
+		};
+		const committedInput = (event: Event) => {
+			const { data, inputType } = event as InputEvent;
+			if (!imeHandledKey || inputType !== "insertText" || !data) return;
+			// The composition already carried this text.
+			if (data === composedText) {
+				composedText = "";
+				return;
+			}
+			emitUserInput(data, "composition");
 		};
 		shell.addEventListener("paste", pasteInput, true);
 		shell.addEventListener("compositionend", compositionInput, true);
+		host.addEventListener("keydown", inputMethodKey, true);
+		host.addEventListener("input", committedInput, true);
 
 		// A file dropped on the pane inserts its path, mirroring a native terminal
 		// so an agent (e.g. Claude Code) attaches it. The sandboxed renderer cannot
@@ -1791,6 +1819,8 @@ export function XtermTerminal(props: XtermTerminalProps) {
 			shell.removeEventListener("contextmenu", openContextMenu);
 			shell.removeEventListener("paste", pasteInput, true);
 			shell.removeEventListener("compositionend", compositionInput, true);
+			host.removeEventListener("keydown", inputMethodKey, true);
+			host.removeEventListener("input", committedInput, true);
 			shell.removeEventListener("dragover", dragOverInput);
 			shell.removeEventListener("drop", dropInput);
 			contextMenuActionsRef.current = null;

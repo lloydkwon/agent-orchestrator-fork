@@ -2206,6 +2206,143 @@ describe("XtermTerminal", () => {
 		expect(onInput).toHaveBeenCalledWith("a", "keyboard");
 	});
 
+	describe("input method commits", () => {
+		// The ibus-hangul order was recorded from Electron 44 on X11; the others are
+		// the orders an input method that fills in or skips the composition would send.
+		function openTerminalInput() {
+			const onInput = vi.fn();
+			const { container, unmount } = render(
+				<XtermTerminal theme="dark" onReady={(terminal) => terminal.onUserInput(onInput)} />,
+			);
+			const host = container.querySelector<HTMLElement>(".terminal-xterm-host")!;
+			const textarea = host.appendChild(document.createElement("textarea"));
+			const imeKey = () => fireEvent.keyDown(textarea, { key: "Process", keyCode: 229 });
+			const compositionEnd = (data: string) => fireEvent.compositionEnd(textarea, { data });
+			const input = (inputType: string, data: string | null, target: HTMLElement = textarea) =>
+				target.dispatchEvent(new InputEvent("input", { bubbles: true, data, inputType }));
+			const key = (value: string, keyCode: number) => {
+				fireEvent.keyDown(textarea, { key: value, keyCode });
+				state.lastTerminal!.keyListeners.forEach((listener) => listener({ key: value }));
+			};
+			const received = () => onInput.mock.calls.map(([data]) => data as string);
+			return { container, host, textarea, unmount, imeKey, compositionEnd, input, key, onInput, received };
+		}
+
+		it("forwards a syllable committed after an empty composition (ibus-hangul)", () => {
+			const { imeKey, compositionEnd, input, onInput, received } = openTerminalInput();
+
+			imeKey();
+			input("insertCompositionText", "한");
+			imeKey();
+			input("deleteContentBackward", null);
+			compositionEnd("");
+			input("insertText", "한");
+			input("insertCompositionText", "ㄱ");
+
+			expect(received().filter(Boolean)).toEqual(["한"]);
+			expect(onInput).toHaveBeenCalledWith("한", "composition");
+		});
+
+		it("keeps the order of a committed syllable and the key that ended it", () => {
+			const { imeKey, compositionEnd, input, key, received } = openTerminalInput();
+
+			imeKey();
+			compositionEnd("");
+			input("insertText", "글");
+			key(" ", 32);
+			input("insertText", " ");
+
+			expect(received().filter(Boolean)).toEqual(["글", " "]);
+		});
+
+		it("does not repeat a composition that already carried its text", () => {
+			const { imeKey, compositionEnd, input, received } = openTerminalInput();
+
+			imeKey();
+			compositionEnd("漢字");
+			input("insertText", "漢字");
+
+			expect(received()).toEqual(["漢字"]);
+		});
+
+		it("forwards the same text again when a later key commits it", () => {
+			const { imeKey, compositionEnd, input, received } = openTerminalInput();
+
+			imeKey();
+			compositionEnd("가");
+			imeKey();
+			input("insertText", "가");
+
+			expect(received()).toEqual(["가", "가"]);
+		});
+
+		it("does not repeat a key xterm reported itself", () => {
+			const { imeKey, input, received } = openTerminalInput();
+
+			imeKey();
+			state.lastTerminal!.keyListeners.forEach((listener) => listener({ key: "." }));
+			input("insertText", ".");
+
+			expect(received()).toEqual(["."]);
+		});
+
+		it("forwards text an input method inserts without composing", () => {
+			const { imeKey, input, received } = openTerminalInput();
+
+			imeKey();
+			input("insertText", "，");
+			imeKey();
+			input("insertText", "，");
+
+			expect(received()).toEqual(["，", "，"]);
+		});
+
+		it("ignores inserted text that no input method key produced", () => {
+			const { imeKey, input, key, received } = openTerminalInput();
+
+			key("a", 65);
+			input("insertText", "a");
+			imeKey();
+			input("insertFromPaste", "pasted");
+			input("insertFromDrop", "dropped");
+
+			expect(received()).toEqual(["a"]);
+		});
+
+		it("ignores text inserted after a key the input method did not handle", () => {
+			const { textarea, imeKey, input, received } = openTerminalInput();
+
+			imeKey();
+			fireEvent.keyDown(textarea, { key: "Meta", keyCode: 91 });
+			input("insertText", "x");
+
+			expect(received()).toEqual([]);
+		});
+
+		it("stops listening when the terminal unmounts", () => {
+			const { host, unmount } = openTerminalInput();
+			const removed = vi.spyOn(host, "removeEventListener");
+
+			unmount();
+
+			expect(removed).toHaveBeenCalledWith("input", expect.any(Function), true);
+			expect(removed).toHaveBeenCalledWith("keydown", expect.any(Function), true);
+		});
+
+		it("does not send text typed in the terminal search box", async () => {
+			const { container, imeKey, input, received } = openTerminalInput();
+
+			imeKey();
+			fireEvent.contextMenu(container.firstElementChild!);
+			fireEvent.click(await screen.findByText("Search terminal"));
+			const search = await screen.findByRole("searchbox", { name: "Search terminal" });
+			fireEvent.keyDown(search, { key: "Process", keyCode: 229 });
+			input("insertText", "검색", search);
+
+			expect(received()).toEqual([]);
+		});
+	});
+
 	it("does not forward raw xterm data/control bytes as user input", () => {
 		const onInput = vi.fn();
 		render(
