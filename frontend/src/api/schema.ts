@@ -8536,6 +8536,8 @@ export interface components {
             /** @description Hold a task while a live run of another task of the project may touch the same files. */
             overlapWait: boolean;
             projectId: string;
+            /** @description New Task starts with Run without plan review on: LADO writes the plan from the issue, and each run is still approved in the desktop app. On until the project turns it off. */
+            runDirectly: boolean;
         };
         LadoProjectUsageResponse: {
             projectId: string;
@@ -11574,6 +11576,8 @@ export interface components {
             overlapIgnoreDefaults?: boolean;
             /** @description Hold a task while a live run of another task of the project may touch the same files. It changes without a presence proof. */
             overlapWait?: null | boolean;
+            /** @description Start New Task with Run without plan review on. It changes without a presence proof; each run is still approved in the desktop app. */
+            runDirectly?: null | boolean;
         };
         UpdateLadoRuleRequest: {
             /** @description Archive or unarchive the rule. */

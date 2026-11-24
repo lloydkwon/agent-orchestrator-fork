@@ -19,7 +19,7 @@ const settings: lado.LadoProjectSettings = {
 	checkTimeoutMinutes: 30,
 	overlapWait: true,
 	overlapIgnore: ["docs/**", "DESIGN.md"],
-	overlapIgnoreIsDefault: true,
+	overlapIgnoreIsDefault: true, runDirectly: true,
 };
 
 function renderCard(current = settings) {

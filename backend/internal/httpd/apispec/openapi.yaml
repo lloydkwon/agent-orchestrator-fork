@@ -24684,6 +24684,11 @@ components:
           type: boolean
         projectId:
           type: string
+        runDirectly:
+          description: 'New Task starts with Run without plan review on: LADO writes
+            the plan from the issue, and each run is still approved in the desktop
+            app. On until the project turns it off.'
+          type: boolean
       required:
       - projectId
       - ladoMode
@@ -24694,6 +24699,7 @@ components:
       - overlapWait
       - overlapIgnore
       - overlapIgnoreIsDefault
+      - runDirectly
       type: object
     LadoProjectUsageResponse:
       properties:
@@ -32440,6 +32446,12 @@ components:
         overlapWait:
           description: Hold a task while a live run of another task of the project
             may touch the same files. It changes without a presence proof.
+          type:
+          - "null"
+          - boolean
+        runDirectly:
+          description: Start New Task with Run without plan review on. It changes
+            without a presence proof; each run is still approved in the desktop app.
           type:
           - "null"
           - boolean

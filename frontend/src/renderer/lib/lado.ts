@@ -285,8 +285,15 @@ export async function updateLadoCheckTimeout(projectId: string, minutes: number)
 }
 
 /** Changes how many executions run at once in the project; it needs no confirmation. */
-export async function updateLadoProjectSettings(projectId: string, input: { maxConcurrent: number }): Promise<LadoProjectSettings> {
-	return putLadoProjectSettings(projectId, { maxConcurrent: input.maxConcurrent }, "Could not change the project's LADO settings");
+/**
+ * Changes the project's cap on running tasks, or whether New Task starts
+ * with Run without plan review on; neither needs presence.
+ */
+export async function updateLadoProjectSettings(
+	projectId: string,
+	input: { maxConcurrent?: number; runDirectly?: boolean },
+): Promise<LadoProjectSettings> {
+	return putLadoProjectSettings(projectId, input, "Could not change the project's LADO settings");
 }
 
 /** Whether a task waits for another's overlapping run, and the globs whose overlap does not count. */

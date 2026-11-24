@@ -26,6 +26,7 @@ type LadoProjectSettingsResponse struct {
 	OverlapWait            bool                   `json:"overlapWait" description:"Hold a task while a live run of another task of the project may touch the same files."`
 	OverlapIgnore          []string               `json:"overlapIgnore" description:"The globs whose overlap does not hold work back, between tasks and between a task's parts."`
 	OverlapIgnoreIsDefault bool                   `json:"overlapIgnoreIsDefault" description:"overlapIgnore is LADO's default list."`
+	RunDirectly            bool                   `json:"runDirectly" description:"New Task starts with Run without plan review on: LADO writes the plan from the issue, and each run is still approved in the desktop app. On until the project turns it off."`
 }
 
 // UpdateLadoProjectSettingsRequest changes a project's LADO settings. It
@@ -39,4 +40,5 @@ type UpdateLadoProjectSettingsRequest struct {
 	OverlapWait           *bool                   `json:"overlapWait,omitempty" description:"Hold a task while a live run of another task of the project may touch the same files. It changes without a presence proof."`
 	OverlapIgnore         *[]string               `json:"overlapIgnore,omitempty" maxItems:"50" description:"Replace the globs whose overlap does not hold work back; an invalid glob refuses with LADO_OVERLAP_IGNORE_INVALID. It changes without a presence proof."`
 	OverlapIgnoreDefaults bool                    `json:"overlapIgnoreDefaults,omitempty" description:"Go back to LADO's default list of globs whose overlap does not count."`
+	RunDirectly           *bool                   `json:"runDirectly,omitempty" description:"Start New Task with Run without plan review on. It changes without a presence proof; each run is still approved in the desktop app."`
 }

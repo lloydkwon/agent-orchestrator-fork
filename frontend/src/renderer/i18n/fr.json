@@ -3694,6 +3694,8 @@
 	"lado.project.mode": "Mode LADO",
 	"lado.project.modeHint": "Quand ce mode est activé, les workers de ce projet ne démarrent qu'à partir de plans que vous avez approuvés.",
 	"lado.project.maxConcurrent": "Tâches simultanées dans ce projet",
+	"lado.project.runDirectly": "Lancer les nouvelles tâches sans revue du plan",
+	"lado.project.runDirectlyHint": "Nouvelle tâche démarre avec « Lancer sans revue du plan » activé. Vous approuvez toujours chaque lancement dans l’app de bureau, et pouvez le désactiver pour une tâche.",
 	"lado.project.maxConcurrentInvalid": "Choisissez de {{min}} à {{max}} exécutions simultanées.",
 	"lado.task.state.approveAgain": "À approuver de nouveau",
 	"lado.task.state.closedUnmerged": "Fermé sans fusion",

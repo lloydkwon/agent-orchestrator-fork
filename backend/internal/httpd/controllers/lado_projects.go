@@ -151,6 +151,7 @@ func (c *LadoController) putProjectSettings(w http.ResponseWriter, r *http.Reque
 		CheckTimeoutMinutes:   req.CheckTimeoutMinutes,
 		CheckCommandsBase:     req.CheckCommandsBase,
 		OverlapWait:           req.OverlapWait,
+		RunDirectly:           req.RunDirectly,
 		OverlapIgnore:         req.OverlapIgnore,
 		OverlapIgnoreDefaults: req.OverlapIgnoreDefaults,
 		Presence:              c.presenceCheck(r, body),
@@ -187,6 +188,7 @@ func ladoProjectSettingsResponse(settings domain.LadoProjectSettings) LadoProjec
 		CheckCommandsSHA256:    domain.LadoCheckCommandsSHA256(settings.CheckCommands),
 		CheckTimeoutMinutes:    settings.CheckTimeoutMinutes,
 		OverlapWait:            settings.OverlapWait,
+		RunDirectly:            settings.RunDirectly,
 		OverlapIgnore:          settings.OverlapIgnoreOrDefault(),
 		OverlapIgnoreIsDefault: settings.OverlapIgnore == nil,
 	}

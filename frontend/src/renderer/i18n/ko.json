@@ -3639,6 +3639,8 @@
 	"lado.project.mode": "LADO 모드",
 	"lado.project.modeHint": "켜면 이 프로젝트의 워커는 승인한 계획으로만 시작합니다.",
 	"lado.project.maxConcurrent": "이 프로젝트에서 동시에 도는 작업",
+	"lado.project.runDirectly": "새 작업은 계획 검토 없이 바로 진행",
+	"lado.project.runDirectlyHint": "새 작업의 «계획 검토 없이 바로 진행»이 켜진 채로 시작합니다. 실행마다 데스크톱 앱의 승인 확인은 그대로이고, 작업마다 끌 수 있습니다.",
 	"lado.project.maxConcurrentInvalid": "동시 실행은 {{min}}~{{max}} 사이에서 고르세요.",
 	"lado.task.state.approveAgain": "다시 승인 필요",
 	"lado.task.state.closedUnmerged": "병합 없이 닫힘",

@@ -3694,6 +3694,8 @@
 	"lado.project.mode": "Modo LADO",
 	"lado.project.modeHint": "Quando ativado, os workers deste projeto só começam a partir de planos que você aprovou.",
 	"lado.project.maxConcurrent": "Tarefas simultâneas neste projeto",
+	"lado.project.runDirectly": "Executar tarefas novas sem revisar o plano",
+	"lado.project.runDirectlyHint": "Nova tarefa começa com “Executar sem revisar o plano” ligado. Você ainda aprova cada execução no app de desktop e pode desligar por tarefa.",
 	"lado.project.maxConcurrentInvalid": "Escolha de {{min}} a {{max}} execuções simultâneas.",
 	"lado.task.state.approveAgain": "Requer nova aprovação",
 	"lado.task.state.closedUnmerged": "Fechado sem mesclagem",

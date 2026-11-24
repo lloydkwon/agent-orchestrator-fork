@@ -30,6 +30,9 @@ type Store interface {
 	// SetLadoProjectOverlap stores the overlap wait and the globs whose
 	// overlap does not count, nil for the defaults.
 	SetLadoProjectOverlap(ctx context.Context, projectID domain.ProjectID, wait bool, ignore []string, event domain.LadoAuditEvent) error
+	// SetLadoProjectRunDirectly stores whether New Task starts with "Run
+	// without plan review" on.
+	SetLadoProjectRunDirectly(ctx context.Context, projectID domain.ProjectID, on bool, event domain.LadoAuditEvent) error
 }
 
 // Projects reads AO's project registry.
@@ -98,6 +101,10 @@ type UpdateInput struct {
 	OverlapWait           *bool
 	OverlapIgnore         *[]string
 	OverlapIgnoreDefaults bool
+	// RunDirectly starts New Task's "Run without plan review" switch on in
+	// the project. Each run is still approved in the desktop app, so it
+	// changes without presence.
+	RunDirectly *bool
 	// Presence checks the request's human-presence proof for an action. The
 	// service calls it only when the change turns LADO mode off or changes
 	// the check commands, which the daemon runs outside any agent sandbox
@@ -122,8 +129,8 @@ func (s *Service) Settings(ctx context.Context, projectID domain.ProjectID) (dom
 // without presence, audited as the API's.
 func (s *Service) UpdateSettings(ctx context.Context, projectID domain.ProjectID, in UpdateInput) (domain.LadoProjectSettings, error) {
 	if in.LadoMode == nil && in.MaxConcurrent == nil && in.CheckCommands == nil && in.CheckTimeoutMinutes == nil &&
-		in.OverlapWait == nil && in.OverlapIgnore == nil && !in.OverlapIgnoreDefaults {
-		return domain.LadoProjectSettings{}, apierr.Invalid("LADO_SETTINGS_EMPTY", "Send ladoMode, maxConcurrent, checkTimeoutMinutes, checkCommands, overlapWait or overlapIgnore.", nil)
+		in.OverlapWait == nil && in.OverlapIgnore == nil && !in.OverlapIgnoreDefaults && in.RunDirectly == nil {
+		return domain.LadoProjectSettings{}, apierr.Invalid("LADO_SETTINGS_EMPTY", "Send ladoMode, maxConcurrent, checkTimeoutMinutes, checkCommands, overlapWait, overlapIgnore or runDirectly.", nil)
 	}
 	if err := validate(in); err != nil {
 		return domain.LadoProjectSettings{}, err
@@ -184,6 +191,15 @@ func (s *Service) UpdateSettings(ctx context.Context, projectID domain.ProjectID
 			}
 			wrote = true
 		}
+	}
+	if in.RunDirectly != nil && *in.RunDirectly != current.RunDirectly {
+		payload, _ := json.Marshal(map[string]any{"from": current.RunDirectly, "to": *in.RunDirectly})
+		event := s.apiEvent(projectID, "project.run_directly_changed", 0, 0)
+		event.Payload = payload
+		if err := s.deps.Store.SetLadoProjectRunDirectly(ctx, projectID, *in.RunDirectly, event); err != nil {
+			return domain.LadoProjectSettings{}, apierr.Internal("LADO_SETTINGS_UPDATE_FAILED", "Failed to update LADO project settings")
+		}
+		wrote = true
 	}
 	if commandsProof != nil {
 		if err := s.setCheckCommands(ctx, projectID, current.CheckCommands, *in.CheckCommands, in.CheckCommandsBase, *commandsProof); err != nil {

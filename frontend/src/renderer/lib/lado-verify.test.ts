@@ -90,7 +90,7 @@ const settings: LadoProjectSettings = {
 	checkTimeoutMinutes: 30,
 	overlapWait: true,
 	overlapIgnore: [],
-	overlapIgnoreIsDefault: true,
+	overlapIgnoreIsDefault: true, runDirectly: true,
 };
 
 beforeEach(() => {

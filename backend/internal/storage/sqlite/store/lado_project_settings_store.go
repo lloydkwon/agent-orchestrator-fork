@@ -17,8 +17,9 @@ import (
 
 // LadoProjectSettings returns the project's LADO settings. A project without a
 // stored row has LADO mode off, the default cap, no check commands, the
-// default check time limit and overlap wait off (#101; the queries that create
-// a row store overlap_wait 0 to match).
+// default check time limit, overlap wait off (#101; the queries that create
+// a row store overlap_wait 0 to match) and run without plan review on (the
+// column default 1, which every query that creates a row keeps).
 func (s *Store) LadoProjectSettings(ctx context.Context, projectID domain.ProjectID) (domain.LadoProjectSettings, error) {
 	row, err := s.qr.GetLadoProjectSettings(ctx, string(projectID))
 	if errors.Is(err, sql.ErrNoRows) {
@@ -28,6 +29,7 @@ func (s *Store) LadoProjectSettings(ctx context.Context, projectID domain.Projec
 			CheckCommands:       []domain.LadoCheckCommand{},
 			CheckTimeoutMinutes: domain.LadoCheckTimeoutDefault,
 			OverlapWait:         false,
+			RunDirectly:         true,
 		}, nil
 	}
 	if err != nil {
@@ -162,8 +164,31 @@ func ladoProjectSettingsFromGen(row gen.LadoProjectSetting) (domain.LadoProjectS
 		CheckTimeoutMinutes: int(row.CheckTimeoutMinutes),
 		OverlapWait:         row.OverlapWait == 1,
 		OverlapIgnore:       ignore,
+		RunDirectly:         row.RunDirectly == 1,
 		UpdatedAt:           row.UpdatedAt,
 	}, nil
+}
+
+// SetLadoProjectRunDirectly stores whether New Task starts with "Run without
+// plan review" on in the project, with the audit event, in one transaction;
+// the change takes the event's time. A project without LADO settings gets
+// them with LADO mode and the overlap wait off.
+func (s *Store) SetLadoProjectRunDirectly(ctx context.Context, projectID domain.ProjectID, on bool, event domain.LadoAuditEvent) error {
+	if err := s.writeMu.LockContext(ctx); err != nil {
+		return err
+	}
+	defer s.writeMu.Unlock()
+	return s.inTx(ctx, "set LADO project run directly", func(q *gen.Queries) error {
+		if err := q.UpsertLadoProjectRunDirectly(ctx, gen.UpsertLadoProjectRunDirectlyParams{
+			ProjectID:   string(projectID),
+			RunDirectly: boolInt(on),
+			UpdatedAt:   event.At.UTC(),
+		}); err != nil {
+			return err
+		}
+		_, err := appendLadoAuditEventTx(ctx, q, event)
+		return err
+	})
 }
 
 // SetLadoProjectOverlap stores whether a project holds tasks whose paths
