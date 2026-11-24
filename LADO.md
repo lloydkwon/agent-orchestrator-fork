@@ -94,6 +94,15 @@ A TLS setup for dockerd on a server, as an example (`prod1.example.test`; the se
 
 Put it in `/etc/docker/daemon.json` (with systemd, remove the `-H` option from the unit's `ExecStart`, since it conflicts with `hosts`), restart Docker, admit only the LADO machine (`ufw allow from 192.0.2.50 to any port 2376 proto tcp`), then enter `tcp://prod1.example.test:2376` with TLS on and import `ca.pem`, the client `cert.pem` and its `key.pem` without a passphrase.
 
+**Phone passkey approval** (the **Phone approval** card in Settings → Mobile, [adr/0014](docs/LJY-PRD/adr/0014-phone-passkey-approvals.md)) lets you approve plans and integrations with a passkey on your phone (Face ID or a fingerprint) while you are away from the desk. It needs Linux with tailscaled running as root, and the phone on the same tailnet.
+
+1. **Turn on**: turning on **Approve on phone** makes the desktop app ask, naming the address the phone will use (`https://<this computer's MagicDNS name>:8444`) and what stays on the desktop. On confirm, LADO points `tailscale serve --https=8444` at the daemon's Unix socket (`~/.ao/lado/phone/phone.sock`, 0600). The socket accepts only tailscaled's uid, so agents on this computer cannot connect to it. It is not turned on when something else uses 8444 or Funnel is on. Turning it off needs no confirmation.
+2. **Enroll a phone**: **Start enrollment** opens enrollment for 10 minutes and shows the address as text and a QR code. Open it on the phone and make a passkey; an 8-digit code and a fingerprint appear on the phone only. Type the code into the desktop card: the desktop app shows the device, the tailnet login, the time and the fingerprint, and asks. Check that the phone shows the same fingerprint and confirm. Five wrong codes close the enrollment. The code is never written to a file, the database or a log.
+3. **Approve**: log in with the passkey at the same address on the phone to read the waiting plans and integrations (30 minutes idle logs you out). Every approval asks for the passkey again, and its signature is bound to the exact revision, head and verification record the phone showed; a change in between refuses it. The audit actor is `human:passkey:<fingerprint>`.
+4. **Revoke**: the card's **Enrolled passkeys** list shows each device, fingerprint, enrollment and last use, with a trash button to revoke. A passkey whose signature counter went back may have been copied and is refused for good.
+
+What the phone cannot do: approve an integration that applies production database SQL ([adr/0013](docs/LJY-PRD/adr/0013-db-changes-with-integration-approval.md)), change settings such as rules, local setup or check commands, turn phone approval on, or enroll a passkey. These stay in the desktop app.
+
 `AO_LADO_DEV_PRESENCE=1` lets approvals, and turning LADO mode off, through without the desktop app's confirmation, for the renderer running in a browser during development. `AO_LADO_DEV_SETUP_IGNORE_PROCESSES=1` lets a lab daemon that runs inside Claude Code or Codex adopt and restore anyway. Never set either on a daemon you use for real work.
 
 ## Where things live
@@ -112,7 +121,8 @@ Everything LADO keeps is under `~/.ao` (or `AO_DATA_DIR`), as for AO: its tables
 - Windows-only behavior (keeping Chat sessions alive after quit, cleaning up child processes) still needs checking on a real Windows install.
 - GitHub Enterprise is not supported, because AO's GitHub API base is fixed to api.github.com.
 - A Copilot orchestrator wraps every message in AO's "spawn a worker" directive, so LADO projects should use another agent as their orchestrator.
-- Approvals need the desktop app; there is no approval from the CLI or the mobile app, by design.
+- Approvals need the desktop app, or a phone with an enrolled passkey for plans and integrations only (Phone passkey approval above); there is no approval from the CLI or the AO mobile app, by design.
+- Phone passkey approval works on Linux only. It does not stop a process that stops the daemon and takes the socket or the serve port, or writes the database directly (T2), the same as the desktop confirmation. A passkey synced by iCloud or Google is also on that account's other devices. No push tells the phone that an approval waits.
 - Plan workers run with the project's orchestrator agent and model, and only Claude Code and Codex can be plan workers. They cannot see the project's Claude memory, so put what every plan needs to know in the Plan designer rule or the repository's documents. A plan worker is read-only: it cannot run a build or a test to learn about the code.
 - Only Claude Code and Codex run LADO tasks; a task with another agent shows Blocked. A LADO run stays in Chat with the agent it was approved with, and cannot switch either while it runs.
 - Local setup adoption works on Linux only until step 9 checks Windows and macOS; restore works everywhere. AO's reviewer gets only the adopted instructions, and the background tasks that write titles get no adopted items.
