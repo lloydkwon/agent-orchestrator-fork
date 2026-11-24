@@ -15,12 +15,20 @@ const testSocket = "/home/dev/.ao/lado/phone/phone.sock"
 // fakeTailscale answers the tailscale CLI calls the phone service makes. The
 // serve status is the next of statuses on each call, the last one repeating,
 // so a test can show the status after `serve --bg` took effect.
+//
+// A stateful fake instead keeps port 8444's target in target: `serve --bg`
+// sets it, `serve ... off` clears it, and the status shows it beside the
+// other ports.
 type fakeTailscale struct {
 	mu       sync.Mutex
 	self     string
 	statuses []string
 	failOn   string
 	calls    []string
+
+	stateful bool
+	target   string
+	funnel   bool
 }
 
 func (f *fakeTailscale) run(_ context.Context, args ...string) ([]byte, error) {
@@ -30,6 +38,18 @@ func (f *fakeTailscale) run(_ context.Context, args ...string) ([]byte, error) {
 	f.calls = append(f.calls, call)
 	if f.failOn != "" && strings.HasPrefix(call, f.failOn) {
 		return nil, errors.New("tailscale failed")
+	}
+	if f.stateful {
+		switch {
+		case strings.HasPrefix(call, "serve --bg --https=8444 "):
+			f.target = strings.TrimPrefix(call, "serve --bg --https=8444 ")
+		case call == "serve --https=8444 off":
+			f.target = ""
+		case call == "serve status --json" && f.target == "":
+			return []byte(otherPortsJSON), nil
+		case call == "serve status --json":
+			return []byte(serveJSON(8444, f.target, f.funnel)), nil
+		}
 	}
 	switch call {
 	case "status --json":
@@ -58,6 +78,18 @@ func (f *fakeTailscale) changes() []string {
 		}
 	}
 	return out
+}
+
+func (f *fakeTailscale) allCalls() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.calls...)
+}
+
+func (f *fakeTailscale) currentTarget() string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.target
 }
 
 func selfJSON(state string) string {

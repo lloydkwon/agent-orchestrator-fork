@@ -56,6 +56,12 @@ func (p LadoPhonePasskey) Revoked() bool {
 	return !p.RevokedAt.IsZero()
 }
 
+// LadoPhoneApprovalSubject is the fixed subject of the presence proof that
+// turns phone approval on (LadoPresencePhoneApprovalOn): there is one phone
+// approval setting, so the proof names no other subject. The desktop app
+// signs the request body; the subject only records what was approved.
+const LadoPhoneApprovalSubject = "phone-approval"
+
 // ErrLadoPhoneProofRefused means a proof that cannot turn phone approval on
 // or enroll a passkey: one for another action, a development proof, or one
 // made from a passkey.

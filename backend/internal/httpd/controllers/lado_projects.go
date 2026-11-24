@@ -55,6 +55,10 @@ type LadoController struct {
 	// DBChanges ties the production database SQL of a PR to its
 	// integration approval (#97).
 	DBChanges LadoDBChangeService
+	// Phone is approving plans and integrations with a phone passkey: the
+	// desktop app's routes that turn it on and enroll passkeys. Nil answers
+	// 501 until the daemon wires it.
+	Phone LadoPhoneService
 }
 
 const (
@@ -115,6 +119,7 @@ func (c *LadoController) Register(r chi.Router) {
 	c.registerLogWatch(r)
 	c.registerAccountLimits(r)
 	c.registerDBChanges(r)
+	c.registerPhone(r)
 }
 
 func (c *LadoController) getProjectSettings(w http.ResponseWriter, r *http.Request) {
