@@ -50,6 +50,18 @@ type ApproveInput struct {
 	// Presence checks the request's human-presence proof for an action. A
 	// dry run does not call it.
 	Presence func(action, subject string) (domain.LadoPresenceProof, error)
+	// Allow, when set, is asked last, once the proof was checked, the PRs
+	// read and verified again and the approval found ready, and before
+	// anything is recorded: the execution and every PR's result in merge
+	// order, a head approved already with its Approval set. An error it
+	// returns comes back as it is, and no approval, proof or audit event is
+	// stored, no status posted and no database change applied or merged;
+	// the heads' records, computed and stored again as for a dry run, stay.
+	// A dry run does not ask it. Nil allows every approval, as before. It
+	// lets a caller refuse what it may not approve, such as a head whose
+	// record holds database SQL (LadoVerification.DBChanges) for an
+	// approval from the phone.
+	Allow func(ctx context.Context, exec domain.LadoExecution, prs []ApprovePRResult) error
 }
 
 // ApprovePR is one PR of an integration approval.
@@ -120,7 +132,8 @@ func approveRequests(in ApproveInput) []approveRequest {
 // record's hash to be the one signed, no repository the execution is
 // expected to open a PR in to be without one and no item to wait or fail
 // (LADO_INTEGRATION_NOT_READY, pr_missing among the reasons for the first),
-// and the acknowledged codes to be each record's confirm codes. A head
+// and the acknowledged codes to be each record's confirm codes; then
+// in.Allow, when set, may still refuse it before anything is recorded. A head
 // approved already is left as it is; the others are recorded with the one
 // proof and an audit event in one transaction, an approval LADO withdrew for
 // a sibling PR's base renewed in place, and each lado/integration status is
@@ -190,6 +203,11 @@ func (s *Service) ApproveIntegration(ctx context.Context, in ApproveInput) (Appr
 	pending, err := s.approvable(ctx, exec, execs, reqs, results)
 	if err != nil {
 		return ApproveResult{}, err
+	}
+	if in.Allow != nil {
+		if err := in.Allow(ctx, exec, slices.Clone(results)); err != nil {
+			return ApproveResult{}, err
+		}
 	}
 	if err := s.recordApprovals(ctx, exec, pending, execs, results, proof, inputs); err != nil {
 		return ApproveResult{}, err
