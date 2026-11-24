@@ -3621,6 +3621,8 @@
 	"lado.project.mode": "LADO 模式",
 	"lado.project.modeHint": "开启后，此项目的 worker 只会按你批准的计划启动。",
 	"lado.project.maxConcurrent": "此项目中同时运行的任务",
+	"lado.project.runDirectly": "新任务跳过计划审阅直接运行",
+	"lado.project.runDirectlyHint": "新建任务开始时“跳过计划审阅直接运行”为开启状态。每次运行仍需在桌面应用中批准，也可以按任务关闭。",
 	"lado.project.maxConcurrentInvalid": "请将并发运行数设为 {{min}} 到 {{max}}。",
 	"lado.task.state.approveAgain": "需要重新批准",
 	"lado.task.state.closedUnmerged": "未合并已关闭",

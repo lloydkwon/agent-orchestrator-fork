@@ -138,9 +138,10 @@ export function useLadoProjectSettings(projectId: string | undefined) {
  * project id for projects LADO never governs (remote hosts, cloud,
  * standalone); they read as off at once.
  */
-export function useLadoModeState(projectId: string | undefined): { ladoMode: boolean; known: boolean } {
+export function useLadoModeState(projectId: string | undefined): { ladoMode: boolean; known: boolean; runDirectly: boolean } {
 	const query = useLadoProjectSettings(projectId);
-	return { ladoMode: query.data?.ladoMode === true, known: !projectId || query.isFetched };
+	// runDirectly: New Task starts with Run without plan review on.
+	return { ladoMode: query.data?.ladoMode === true, known: !projectId || query.isFetched, runDirectly: query.data?.runDirectly === true };
 }
 
 /** Whether a project is in LADO mode; see useLadoModeState. */
@@ -171,7 +172,7 @@ export function useSetLadoMode(projectId: string) {
 export function useUpdateLadoProjectSettings(projectId: string) {
 	const queryClient = useQueryClient();
 	return useMutation({
-		mutationFn: (input: { maxConcurrent: number }) => updateLadoProjectSettings(projectId, input),
+		mutationFn: (input: { maxConcurrent?: number; runDirectly?: boolean }) => updateLadoProjectSettings(projectId, input),
 		onSuccess: (settings) => queryClient.setQueryData(ladoProjectSettingsQueryKey(projectId), settings),
 		retry: false,
 	});

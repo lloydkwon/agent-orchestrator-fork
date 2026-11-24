@@ -170,7 +170,7 @@ const changedCeiling = ceilingRule({ ceiling: { mode: "bypass-permissions" }, ve
 const NO_COMMANDS_SHA = "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945";
 
 function settingsResponse(ladoMode = true): LadoPresenceProjectSettings {
-	return { projectId: "demo", ladoMode, maxConcurrent: 1, checkCommands: [], checkCommandsSha256: NO_COMMANDS_SHA, checkTimeoutMinutes: 30, overlapWait: true, overlapIgnore: [], overlapIgnoreIsDefault: true };
+	return { projectId: "demo", ladoMode, maxConcurrent: 1, checkCommands: [], checkCommandsSha256: NO_COMMANDS_SHA, checkTimeoutMinutes: 30, overlapWait: true, overlapIgnore: [], overlapIgnoreIsDefault: true, runDirectly: true };
 }
 
 function projectResponse(name = "Demo app"): components["schemas"]["ProjectGetResponse"] {

@@ -89,6 +89,25 @@ func TestLadoAPI_PutProjectSettings(t *testing.T) {
 	}
 }
 
+// Run without plan review goes both ways through the settings route.
+func TestLadoAPI_ProjectSettingsRunDirectly(t *testing.T) {
+	svc := &fakeLadoProjectService{settings: domain.LadoProjectSettings{ProjectID: "mer", LadoMode: true, RunDirectly: true}}
+	srv := newLadoTestServer(t, httpd.APIDeps{LadoProjects: svc})
+
+	body, status, _ := doRequest(t, srv, "GET", "/api/v1/lado/projects/mer/settings", "")
+	if got := decodeLadoSettings(t, body); status != http.StatusOK || !got.RunDirectly {
+		t.Fatalf("GET = %d %+v, want run directly on", status, got)
+	}
+	svc.settings.RunDirectly = false
+	body, status, _ = doRequest(t, srv, "PUT", "/api/v1/lado/projects/mer/settings", `{"runDirectly":false}`)
+	if got := decodeLadoSettings(t, body); status != http.StatusOK || got.RunDirectly {
+		t.Fatalf("PUT = %d %+v, want run directly off", status, got)
+	}
+	if svc.gotUpdate.RunDirectly == nil || *svc.gotUpdate.RunDirectly || svc.gotUpdate.LadoMode != nil {
+		t.Fatalf("service got %+v, want only runDirectly false", svc.gotUpdate)
+	}
+}
+
 func TestLadoAPI_PutLeavesAMissingLadoModeToTheService(t *testing.T) {
 	svc := &fakeLadoProjectService{}
 	srv := newLadoTestServer(t, httpd.APIDeps{LadoProjects: svc})

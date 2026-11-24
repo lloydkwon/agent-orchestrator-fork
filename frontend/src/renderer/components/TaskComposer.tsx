@@ -182,13 +182,21 @@ export function TaskComposer({
 	const isStandalone = projectId === STANDALONE_WORKSPACE_ID;
 	// LADO fork: in a LADO project the composer creates an issue on the
 	// project's repository instead of starting a session (docs/LJY-PRD/TDD.md §5.1).
-	const { ladoMode, known: ladoModeKnown } = useLadoModeState(!hostId && !isCloudProject && !isStandalone ? projectId : undefined);
+	const {
+		ladoMode,
+		known: ladoModeKnown,
+		runDirectly: runDirectlyDefault,
+	} = useLadoModeState(!hostId && !isCloudProject && !isStandalone ? projectId : undefined);
 	const createIssueTask = useCreateLadoTask(projectId ?? "");
 	const issueRepository = useLadoIssueRepository(projectId ?? "", ladoMode);
 	const [importOpen, setImportOpen] = useState(false);
 	// Run without plan review: the issue's own text becomes the plan, approved
-	// at once. Off for every new task, since it skips the plan worker.
-	const [runDirectly, setRunDirectly] = useState(false);
+	// at once. It starts as the project's LADO settings say (on until the
+	// project turns it off); a change here holds for this task until the
+	// project changes.
+	const [runDirectlyChoice, setRunDirectly] = useState<boolean | null>(null);
+	useEffect(() => setRunDirectly(null), [projectId]);
+	const runDirectly = runDirectlyChoice ?? runDirectlyDefault;
 	const runFromIssue = useRunLadoTaskFromIssue(projectId ?? "");
 	// The task created for this request when running it failed afterwards, so
 	// submitting the same request again (project, repository, agent, model and

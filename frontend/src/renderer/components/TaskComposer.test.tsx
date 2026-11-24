@@ -2540,6 +2540,25 @@ describe("TaskComposer in a LADO project", () => {
 		await waitFor(() => expect(postedPaths().filter((path) => path === "/api/v1/lado/tasks")).toHaveLength(2));
 	});
 
+	it("starts with run without plan review on when the project says so, and turning it off creates the issue only", async () => {
+		const get = h.get.getMockImplementation();
+		h.get.mockImplementation(async (path: string, init?: unknown) => path === "/api/v1/lado/projects/{projectId}/settings"
+			? { data: { projectId: "project-a", ladoMode: true, runDirectly: true } }
+			: get?.(path, init));
+		h.post.mockImplementation(async (path: string) => path === "/api/v1/lado/tasks" ? { data: ladoTask } : { data: {} });
+		const onIssueTasksCreated = vi.fn();
+		render(<Wrap><TaskComposer projectId="project-a" onCreated={vi.fn()} onIssueTasksCreated={onIssueTasksCreated} /></Wrap>);
+
+		await waitFor(() => expect(screen.getByRole("button", { name: "Create issue and run" })).toBeEnabled());
+		expect(runDirectly()).toBeChecked();
+		fireEvent.click(runDirectly());
+		fireEvent.change(task(), { target: { value: "Add logout" } });
+		fireEvent.click(createIssue());
+
+		await waitFor(() => expect(onIssueTasksCreated).toHaveBeenCalledWith("project-a"));
+		expect(postedPaths()).toEqual(["/api/v1/lado/tasks"]);
+	});
+
 	it("opens the issue picker", async () => {
 		render(<Wrap><TaskComposer projectId="project-a" onCreated={vi.fn()} /></Wrap>);
 

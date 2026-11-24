@@ -1,6 +1,6 @@
 -- name: GetLadoProjectSettings :one
 SELECT project_id, lado_mode, updated_at, max_concurrent, check_commands, check_timeout_minutes,
-    overlap_wait, overlap_ignore_json
+    overlap_wait, overlap_ignore_json, run_directly
 FROM lado_project_settings
 WHERE project_id = ?;
 
@@ -13,7 +13,7 @@ ON CONFLICT (project_id) DO UPDATE SET
     lado_mode = excluded.lado_mode,
     updated_at = excluded.updated_at
 RETURNING project_id, lado_mode, updated_at, max_concurrent, check_commands, check_timeout_minutes,
-    overlap_wait, overlap_ignore_json;
+    overlap_wait, overlap_ignore_json, run_directly;
 
 -- name: InsertLadoNewProjectSettings :execrows
 -- A newly registered project starts with its own settings row (#3). A row
@@ -50,3 +50,10 @@ ON CONFLICT (project_id) DO UPDATE SET
     overlap_wait = excluded.overlap_wait,
     overlap_ignore_json = excluded.overlap_ignore_json,
     updated_at = excluded.updated_at;
+
+-- name: UpsertLadoProjectRunDirectly :exec
+-- A project without a settings row gets one with LADO mode off and
+-- overlap_wait 0 (#101).
+INSERT INTO lado_project_settings (project_id, lado_mode, overlap_wait, run_directly, updated_at)
+VALUES (?, 0, 0, ?, ?)
+ON CONFLICT (project_id) DO UPDATE SET run_directly = excluded.run_directly, updated_at = excluded.updated_at;

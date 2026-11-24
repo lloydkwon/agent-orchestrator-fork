@@ -3639,6 +3639,8 @@
 	"lado.project.mode": "LADO モード",
 	"lado.project.modeHint": "オンにすると、このプロジェクトのワーカーは承認した計画からのみ開始します。",
 	"lado.project.maxConcurrent": "このプロジェクトで同時に実行するタスク",
+	"lado.project.runDirectly": "新しいタスクは計画レビューなしで実行",
+	"lado.project.runDirectlyHint": "新しいタスクは「計画レビューなしで実行」がオンの状態で始まります。実行ごとのデスクトップアプリでの承認はそのままで、タスクごとにオフにできます。",
 	"lado.project.maxConcurrentInvalid": "同時実行数は {{min}}〜{{max}} から選んでください。",
 	"lado.task.state.approveAgain": "再承認が必要",
 	"lado.task.state.closedUnmerged": "マージせずにクローズ",

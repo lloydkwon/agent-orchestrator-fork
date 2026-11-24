@@ -30,7 +30,11 @@ type LadoProjectSettings struct {
 	// a project that turned it on keeps it.
 	OverlapWait   bool
 	OverlapIgnore []string
-	UpdatedAt     time.Time
+	// RunDirectly starts New Task's "Run without plan review" switch on in
+	// the project: on until the project turns it off. Each run is still
+	// approved in the desktop app.
+	RunDirectly bool
+	UpdatedAt   time.Time
 }
 
 // OverlapIgnoreOrDefault returns the project's ignore globs, or the defaults

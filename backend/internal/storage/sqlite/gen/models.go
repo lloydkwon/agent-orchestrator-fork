@@ -917,6 +917,7 @@ type LadoProjectSetting struct {
 	CheckTimeoutMinutes int64
 	OverlapWait         int64
 	OverlapIgnoreJson   sql.NullString
+	RunDirectly         int64
 }
 
 type LadoQueueEntry struct {

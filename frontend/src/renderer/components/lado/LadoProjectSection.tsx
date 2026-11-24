@@ -7,7 +7,8 @@
 // (issue #87), and the production database changes (issue #97).
 // The daemon refuses turning the mode on while tracker intake is on; turning
 // it off asks the desktop app to confirm, and a cancelled confirmation leaves
-// it on. The cap saves at once, also while the mode is off.
+// it on. The cap, and whether New Task starts with Run without plan review on,
+// save at once, also while the mode is off.
 import { useTranslation } from "react-i18next";
 import { useLadoProjectSettings, useSetLadoMode, useUpdateLadoProjectSettings } from "../../hooks/useLado";
 import { LadoApiError } from "../../lib/lado";
@@ -30,11 +31,13 @@ export function LadoProjectSection({ projectId }: { projectId: string }) {
 	const settings = useLadoProjectSettings(projectId);
 	const setMode = useSetLadoMode(projectId);
 	const setCap = useUpdateLadoProjectSettings(projectId);
+	const setRunDirectly = useUpdateLadoProjectSettings(projectId);
 	const data = settings.data;
-	const busy = setMode.isPending || setCap.isPending;
+	const busy = setMode.isPending || setCap.isPending || setRunDirectly.isPending;
 	// The switch shows only the mode the daemon holds, so it stays on while the
 	// desktop app asks and after a cancel. The cap shows a change while it saves.
 	const cap = setCap.isPending && setCap.variables ? setCap.variables.maxConcurrent : data?.maxConcurrent;
+	const runDirectly = setRunDirectly.isPending && setRunDirectly.variables ? setRunDirectly.variables.runDirectly : data?.runDirectly;
 
 	const changeMode = (on: boolean) => {
 		if (busy) return;
@@ -57,7 +60,14 @@ export function LadoProjectSection({ projectId }: { projectId: string }) {
 		const maxConcurrent = Number(value);
 		if (busy || maxConcurrent === data?.maxConcurrent) return;
 		setMode.reset();
+		setRunDirectly.reset();
 		setCap.mutate({ maxConcurrent });
+	};
+	const changeRunDirectly = (on: boolean) => {
+		if (busy || on === data?.runDirectly) return;
+		setMode.reset();
+		setCap.reset();
+		setRunDirectly.mutate({ runDirectly: on });
 	};
 
 	if (settings.isPending) {
@@ -109,6 +119,21 @@ export function LadoProjectSection({ projectId }: { projectId: string }) {
 						disabled={busy}
 						onChange={changeCap}
 					/>
+				</SettingsRow>
+				<SettingsRow
+					label={t("lado.project.runDirectly")}
+					description={
+						<>
+							{t("lado.project.runDirectlyHint")}
+							{setRunDirectly.isError ? (
+								<span role="alert" className="block text-error">
+									{ladoErrorText(t, setRunDirectly.error)}
+								</span>
+							) : null}
+						</>
+					}
+				>
+					<Switch aria-label={t("lado.project.runDirectly")} checked={runDirectly === true} disabled={busy} onCheckedChange={changeRunDirectly} />
 				</SettingsRow>
 			</SettingsSection>
 			<LadoProjectOverlapCard projectId={projectId} settings={data} />

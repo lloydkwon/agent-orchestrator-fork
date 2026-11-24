@@ -3620,6 +3620,8 @@
 	"lado.project.mode": "LADO mode",
 	"lado.project.modeHint": "When on, this project's workers start only from plans you approved.",
 	"lado.project.maxConcurrent": "Concurrent tasks in this project",
+	"lado.project.runDirectly": "New tasks run without plan review",
+	"lado.project.runDirectlyHint": "New Task starts with Run without plan review on. You still approve each run in the desktop app, and can turn the switch off for a task.",
 	"lado.project.maxConcurrentInvalid": "Choose {{min}} to {{max}} concurrent runs.",
 	"lado.task.state.approveAgain": "Needs approval again",
 	"lado.task.state.closedUnmerged": "Closed without merge",

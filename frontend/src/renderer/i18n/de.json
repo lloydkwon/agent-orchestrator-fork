@@ -3639,6 +3639,8 @@
 	"lado.project.mode": "LADO-Modus",
 	"lado.project.modeHint": "Wenn aktiviert, starten die Worker dieses Projekts nur aus Plänen, die du freigegeben hast.",
 	"lado.project.maxConcurrent": "Gleichzeitige Aufgaben in diesem Projekt",
+	"lado.project.runDirectly": "Neue Aufgaben ohne Planprüfung ausführen",
+	"lado.project.runDirectlyHint": "Neue Aufgabe startet mit „Ohne Planprüfung ausführen“ eingeschaltet. Jede Ausführung gibst du weiterhin in der Desktop-App frei, und du kannst den Schalter pro Aufgabe ausschalten.",
 	"lado.project.maxConcurrentInvalid": "Wähle {{min}} bis {{max}} gleichzeitige Läufe.",
 	"lado.task.state.approveAgain": "Erneute Freigabe nötig",
 	"lado.task.state.closedUnmerged": "Geschlossen ohne Merge",
