@@ -795,6 +795,35 @@ type LadoPartRunRepo struct {
 	BaseCommitsAhead     sql.NullInt64
 }
 
+type LadoPhonePasskey struct {
+	ID               string
+	CredentialID     []byte
+	CredentialJson   string
+	RpID             string
+	DeviceHint       string
+	Login            string
+	Fingerprint      string
+	SignCount        int64
+	CloneWarning     int64
+	CreatedAt        time.Time
+	LastUsedAt       sql.NullTime
+	RevokedAt        sql.NullTime
+	EnrollProofNonce string
+}
+
+type LadoPhoneSetting struct {
+	ID               int64
+	Enabled          int64
+	RpID             string
+	Origin           string
+	OwnerLogin       string
+	UserHandle       []byte
+	ServePort        int64
+	SocketPath       string
+	EnableProofNonce sql.NullString
+	UpdatedAt        time.Time
+}
+
 type LadoPlanApproval struct {
 	ID         string
 	RevisionID string
@@ -906,6 +935,7 @@ type LadoPresenceProof struct {
 	Dev       int64
 	ExpiresAt time.Time
 	UsedAt    time.Time
+	Via       string
 }
 
 type LadoProjectSetting struct {

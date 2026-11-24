@@ -495,10 +495,7 @@ func derivedPresenceNonce(nonce string, i int) string {
 // compares with (#53).
 func (s *Service) recordApprovals(ctx context.Context, exec domain.LadoExecution, pending []pendingApproval, execs []domain.LadoExecution, results []ApprovePRResult, proof domain.LadoPresenceProof, inputs []headInputs) error {
 	now := s.now()
-	actor := "human"
-	if proof.Dev {
-		actor = "human:dev-presence"
-	}
+	actor := proof.Actor()
 	approvals := make([]domain.LadoIntegrationApproval, 0, len(pending))
 	prs := make([]map[string]any, 0, len(pending))
 	for n, p := range pending {
