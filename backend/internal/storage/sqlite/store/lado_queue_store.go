@@ -697,6 +697,9 @@ func (s *Store) LinkLadoExecution(ctx context.Context, entryID domain.LadoQueueE
 		}); err != nil {
 			return err
 		}
+		if err := endLadoWorkerOnPRMerge(ctx, q, exec); err != nil {
+			return err
+		}
 		n, err := q.SetLadoQueueEntryDispatched(ctx, gen.SetLadoQueueEntryDispatchedParams{
 			DispatchedSessionID: ladoNullString(string(exec.SessionID)),
 			ID:                  entry.ID,
@@ -711,6 +714,37 @@ func (s *Store) LinkLadoExecution(ctx context.Context, entryID domain.LadoQueueE
 		return nil
 	})
 	return unwrapLadoSentinel(err)
+}
+
+// endLadoWorkerOnPRMerge turns on AO's merge-completion policy for the
+// session of a pull request worker (LADO fork): task and worker slots count
+// live execution sessions, so a worker whose PR merged must end rather than
+// idle on and keep its project's slot. A worker expected to open PRs in
+// several repositories keeps its session, since AO would end it once the
+// first of them merged, before the next one opened (#64).
+func endLadoWorkerOnPRMerge(ctx context.Context, q *gen.Queries, exec domain.LadoExecution) error {
+	if len(exec.PRRepos) > 1 {
+		return nil
+	}
+	session, err := q.GetSession(ctx, exec.SessionID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	// The write marks the session changed: never move its time back, as a
+	// recovered link starts at the session's creation.
+	at := exec.StartedAt.UTC()
+	if session.UpdatedAt.After(at) {
+		at = session.UpdatedAt
+	}
+	_, err = q.SetSessionTerminateOnPRMerge(ctx, gen.SetSessionTerminateOnPRMergeParams{
+		TerminateOnPRMerge: true,
+		UpdatedAt:          at,
+		ID:                 exec.SessionID,
+	})
+	return err
 }
 
 // LeasedLadoQueueEntries returns every entry a lease token holds, expired or

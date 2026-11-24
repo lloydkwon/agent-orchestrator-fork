@@ -375,6 +375,10 @@ func (s *Store) LinkLadoPartExecution(ctx context.Context, request string, exec 
 		}
 		var n int64
 		if exec.Role == domain.LadoRoleIntegration {
+			// The integration worker opens the task's pull request.
+			if err := endLadoWorkerOnPRMerge(ctx, q, exec); err != nil {
+				return err
+			}
 			n, err = q.SetLadoPartRunDispatched(ctx, gen.SetLadoPartRunDispatchedParams{
 				DispatchedSessionID: ladoNullString(string(exec.SessionID)), ID: entry.ID, Request: request,
 			})

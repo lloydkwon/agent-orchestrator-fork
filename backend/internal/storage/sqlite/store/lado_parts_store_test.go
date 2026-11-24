@@ -87,6 +87,9 @@ func TestLadoPartRunsInTheStore(t *testing.T) {
 	if requests, _ := s.LadoPartSpawnRequests(ctx); len(requests) != 0 {
 		t.Fatalf("spawn requests after the link = %+v, want none", requests)
 	}
+	if sessionEndsOnPRMerge(t, s, session.ID) {
+		t.Fatal("a part worker's session ends on PR merge; it opens no pull request")
+	}
 	load, err := s.LadoRunLoad(ctx, now)
 	if err != nil || load.TaskCount() != 1 || load.Workers != 1 || !load.Runs("lado-task-1") {
 		t.Fatalf("load = %+v, %v; want one task with one worker", load, err)
@@ -125,6 +128,9 @@ func TestLadoPartRunsInTheStore(t *testing.T) {
 	task, _, _ = s.LadoTask(ctx, "lado-task-1")
 	if task.Execution.SessionID != worker.ID || task.Queue.DispatchedSessionID != worker.ID || task.Execution.DispatchBaseSHA != base {
 		t.Fatalf("task execution %+v entry %+v, want the integration worker", task.Execution, task.Queue)
+	}
+	if !sessionEndsOnPRMerge(t, s, worker.ID) {
+		t.Fatal("the integration worker's session does not end on PR merge")
 	}
 	if runs, _ := s.ActiveLadoPartRuns(ctx); len(runs) != 0 {
 		t.Fatalf("active runs = %+v, want none once the integration worker started", runs)
