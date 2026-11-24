@@ -12,6 +12,8 @@ import {
 	LADO_PRESENCE_CHANGE_PROJECT_CHECKS_CHANNEL,
 	LADO_PRESENCE_CHANGE_RULE_CHANNEL,
 	LADO_PRESENCE_CHANGE_SETUP_CHANNEL,
+	LADO_PRESENCE_ENABLE_PHONE_APPROVAL_CHANNEL,
+	LADO_PRESENCE_ENROLL_PHONE_PASSKEY_CHANNEL,
 	LADO_PRESENCE_RESTORE_SETUP_CHANNEL,
 	LADO_PRESENCE_SET_LADO_MODE_CHANNEL,
 	type LadoPresenceAdoptSetupResult,
@@ -26,6 +28,9 @@ import {
 	type LadoPresenceIntegration,
 	type LadoPresenceIntegrationResult,
 	type LadoPresenceModeResult,
+	type LadoPresencePhoneApprovalResult,
+	type LadoPresencePhonePasskeyResult,
+	type LadoPresencePhoneStatus,
 	type LadoPresenceProjectSettings,
 	type LadoPresenceRestoreSetupResult,
 	type LadoPresenceRule,
@@ -526,6 +531,45 @@ function dbExecution(prs: DbPR[] = [dbPR()]): components["schemas"]["LadoDBChang
 	return { sessionId: "demo-7", taskId: "lado-task-1", prs };
 }
 
+const PHONE_ORIGIN = "https://desk.tail1234.ts.net:8444";
+const CREDENTIAL_SHA = "5e".repeat(32);
+
+function phoneStatus(overrides: Partial<LadoPresencePhoneStatus> = {}): LadoPresencePhoneStatus {
+	return {
+		supported: true,
+		enabled: false,
+		listening: false,
+		origin: "",
+		ownerLogin: "",
+		rpId: "",
+		servePort: 0,
+		pairingPending: false,
+		...overrides,
+	};
+}
+
+function phonePairing(overrides: Partial<components["schemas"]["LadoPhonePairingResponse"]> = {}): components["schemas"]["LadoPhonePairingResponse"] {
+	return {
+		deviceHint: "iPhone",
+		login: "owner@example.com",
+		createdAt: "2026-11-24T10:00:00Z",
+		fingerprint: CREDENTIAL_SHA.slice(0, 8),
+		credentialSha256: CREDENTIAL_SHA,
+		...overrides,
+	};
+}
+
+const phonePasskey: components["schemas"]["LadoPhonePasskeyResponse"] = {
+	id: "lpk_1",
+	fingerprint: CREDENTIAL_SHA.slice(0, 8),
+	deviceHint: "iPhone",
+	login: "owner@example.com",
+	rpId: "desk.tail1234.ts.net",
+	createdAt: "2026-11-24T10:01:00Z",
+	revoked: false,
+	cloneWarning: false,
+};
+
 type Route = () => Response | Promise<Response>;
 type Routes = {
 	plan?: Route;
@@ -553,6 +597,10 @@ type Routes = {
 	dbChanges?: Route;
 	dbFile?: (url: URL) => Response | Promise<Response>;
 	dbApply?: Route;
+	phoneStatus?: Route;
+	phoneEnable?: Route;
+	phoneLookup?: Route;
+	phoneEnroll?: Route;
 };
 
 function setup(overrides: Partial<LadoPresenceDeps> = {}, routes: Routes = {}) {
@@ -572,6 +620,12 @@ function setup(overrides: Partial<LadoPresenceDeps> = {}, routes: Routes = {}) {
 			if (routes.dbFile) return routes.dbFile(new URL(url));
 			const blobSha = new URL(url).searchParams.get("blobSha") ?? "";
 			return json(200, { path: "x.sql", blobSha, content: `-- ${blobSha.slice(0, 4)}\n\nALTER TABLE users\n  ADD COLUMN age int;\nSELECT 1;\n`, truncated: false });
+		}
+		if (pathname.startsWith("/api/v1/lado/phone/")) {
+			if (pathname.endsWith("/status")) return routes.phoneStatus ? routes.phoneStatus() : json(200, phoneStatus());
+			if (pathname.endsWith("/enable")) return routes.phoneEnable ? routes.phoneEnable() : json(200, phoneStatus({ enabled: true, listening: true }));
+			if (pathname.endsWith("/pairings/lookup")) return routes.phoneLookup ? routes.phoneLookup() : json(200, phonePairing());
+			if (pathname.endsWith("/passkeys")) return routes.phoneEnroll ? routes.phoneEnroll() : json(200, phonePasskey);
 		}
 		if (pathname.endsWith("/db-changes/apply")) return routes.dbApply ? routes.dbApply() : json(200, dbRun({ state: "queued" }));
 		if (pathname.endsWith("/db-changes")) return routes.dbChanges ? routes.dbChanges() : json(200, dbExecution());
@@ -648,6 +702,8 @@ function setup(overrides: Partial<LadoPresenceDeps> = {}, routes: Routes = {}) {
 	const chromeHandler = handlers.get(LADO_PRESENCE_CHANGE_CLAUDE_CHROME_CHANNEL);
 	const dbChangesHandler = handlers.get(LADO_PRESENCE_CHANGE_DB_CHANGES_CHANNEL);
 	const dbApplyHandler = handlers.get(LADO_PRESENCE_APPLY_DB_CHANGES_CHANNEL);
+	const enablePhoneHandler = handlers.get(LADO_PRESENCE_ENABLE_PHONE_APPROVAL_CHANNEL);
+	const enrollPhoneHandler = handlers.get(LADO_PRESENCE_ENROLL_PHONE_PASSKEY_CHANNEL);
 	if (
 		!approveHandler ||
 		!changeRuleHandler ||
@@ -659,7 +715,9 @@ function setup(overrides: Partial<LadoPresenceDeps> = {}, routes: Routes = {}) {
 		!checksHandler ||
 		!chromeHandler ||
 		!dbChangesHandler ||
-		!dbApplyHandler
+		!dbApplyHandler ||
+		!enablePhoneHandler ||
+		!enrollPhoneHandler
 	) {
 		throw new Error("a presence channel is not registered");
 	}
@@ -686,6 +744,10 @@ function setup(overrides: Partial<LadoPresenceDeps> = {}, routes: Routes = {}) {
 			dbChangesHandler({ sender }, input) as Promise<LadoPresenceDbChangesResult>,
 		applyDbChanges: (input: unknown, sender: unknown = shell) =>
 			dbApplyHandler({ sender }, input) as Promise<LadoPresenceApplyDbChangesResult>,
+		enablePhone: (input: unknown = {}, sender: unknown = shell) =>
+			enablePhoneHandler({ sender }, input) as Promise<LadoPresencePhoneApprovalResult>,
+		enrollPhone: (input: unknown, sender: unknown = shell) =>
+			enrollPhoneHandler({ sender }, input) as Promise<LadoPresencePhonePasskeyResult>,
 		calls,
 		dialog,
 		fetch,
@@ -3292,6 +3354,166 @@ describe("applying database changes", () => {
 				buttons: [catalog["lado.presence.cancel"], catalog["lado.presence.dbApply.apply"]],
 			});
 			expect(dialogOptions(dialog).detail, locale).toContain(catalog["lado.presence.dbApply.nextApproval"]);
+		}
+	});
+});
+
+describe("turning phone approval on", () => {
+	const enablePath = "/api/v1/lado/phone/enable";
+
+	it("reads the state, names the address and what stays on the desktop, then signs {}", async () => {
+		const { enablePhone, calls, dialog, window } = setup({}, { phoneStatus: () => json(200, phoneStatus({ origin: PHONE_ORIGIN, servePort: 8444 })) });
+		// The renderer cannot add fields or headers.
+		const result = await enablePhone({ extra: "ignored", headers: { [LADO_PRESENCE_HEADER]: "v1.forged" } });
+
+		expect(result).toEqual({ status: "enabled", phone: phoneStatus({ enabled: true, listening: true }) });
+		const en = trayCatalogs.en;
+		expect(dialog.showMessageBox).toHaveBeenCalledWith(
+			window,
+			expect.objectContaining({
+				type: "question",
+				message: en["lado.presence.phone.enableTitle"],
+				buttons: ["Cancel", en["lado.presence.phone.turnOn"]],
+				defaultId: 0,
+				cancelId: 0,
+			}),
+		);
+		expect(dialogOptions(dialog).detail).toContain(PHONE_ORIGIN);
+		expect(calls.map(({ url, init }) => [init.method, url])).toEqual([
+			["GET", `${BASE}/api/v1/lado/phone/status`],
+			["POST", `${BASE}${enablePath}`],
+		]);
+		expectSigned(calls[1]!, "POST", "{}");
+	});
+
+	it("names the serve port when phone approval was never on", async () => {
+		const { enablePhone, dialog } = setup({ locale: () => "ko" });
+		await enablePhone();
+		const ko = trayCatalogs.ko;
+		expect(dialogOptions(dialog)).toMatchObject({ message: ko["lado.presence.phone.enableTitle"] });
+		expect(dialogOptions(dialog).detail).toContain("8444");
+		expect(ko["lado.presence.phone.enableTitle"]).not.toBe(trayCatalogs.en["lado.presence.phone.enableTitle"]);
+	});
+
+	it("refuses an untrusted sender before it reads or asks anything", async () => {
+		const { enablePhone, fetch, dialog } = setup();
+		await expect(enablePhone({}, { id: 99 })).resolves.toMatchObject({ status: "error", code: "LADO_PRESENCE_UNTRUSTED_SENDER" });
+		expect(fetch).not.toHaveBeenCalled();
+		expect(dialog.showMessageBox).not.toHaveBeenCalled();
+	});
+
+	it("returns the state without asking when it is on and listening, and refuses off Linux", async () => {
+		const on = phoneStatus({ enabled: true, listening: true, origin: PHONE_ORIGIN });
+		const listening = setup({}, { phoneStatus: () => json(200, on) });
+		await expect(listening.enablePhone()).resolves.toEqual({ status: "enabled", phone: on });
+		expect(listening.dialog.showMessageBox).not.toHaveBeenCalled();
+		expect(listening.calls.map(({ init }) => init.method)).toEqual(["GET"]);
+
+		const other = setup({}, { phoneStatus: () => json(200, phoneStatus({ supported: false })) });
+		await expect(other.enablePhone()).resolves.toMatchObject({ status: "error", code: "LADO_PHONE_UNSUPPORTED" });
+		expect(other.dialog.showMessageBox).not.toHaveBeenCalled();
+		expect(other.calls.map(({ init }) => init.method)).toEqual(["GET"]);
+	});
+
+	it("signs nothing when the human cancels, and returns the daemon's refusal", async () => {
+		const cancelled = setup();
+		cancelled.dialog.showMessageBox.mockResolvedValueOnce({ response: 0, checkboxChecked: false });
+		await expect(cancelled.enablePhone()).resolves.toEqual({ status: "cancelled" });
+		expect(cancelled.calls.map(({ init }) => init.method)).toEqual(["GET"]);
+
+		const refusal = { error: "conflict", code: "LADO_PHONE_PORT_TAKEN", message: "Tailscale serve port 8444 already serves something else.", details: { port: 8444 } };
+		const refused = setup({}, { phoneEnable: () => json(409, refusal) });
+		await expect(refused.enablePhone()).resolves.toEqual({ status: "error", code: refusal.code, message: refusal.message, details: refusal.details });
+	});
+});
+
+describe("enrolling a phone passkey", () => {
+	const lookupPath = "/api/v1/lado/phone/pairings/lookup";
+	const passkeysPath = "/api/v1/lado/phone/passkeys";
+
+	it("looks the pairing up by the code, shows the phone's facts, then signs the code and the credential", async () => {
+		const { enrollPhone, calls, dialog, window } = setup();
+		// Spaces and dashes are how people copy the code; the renderer cannot add fields.
+		const result = await enrollPhone({ code: " 1234-5678 ", credentialSha256: "f".repeat(64), extra: "ignored" });
+
+		expect(result).toEqual({ status: "enrolled", passkey: phonePasskey });
+		const en = trayCatalogs.en;
+		expect(dialog.showMessageBox).toHaveBeenCalledWith(
+			window,
+			expect.objectContaining({
+				type: "question",
+				message: en["lado.presence.phone.enrollTitle"],
+				buttons: ["Cancel", en["lado.presence.phone.enroll"]],
+				defaultId: 0,
+				cancelId: 0,
+			}),
+		);
+		const detail = String(dialogOptions(dialog).detail);
+		for (const fact of ["iPhone", "owner@example.com", CREDENTIAL_SHA.slice(0, 8)]) expect(detail).toContain(fact);
+		expect(calls.map(({ url, init }) => [init.method, url])).toEqual([
+			["POST", `${BASE}${lookupPath}`],
+			["POST", `${BASE}${passkeysPath}`],
+		]);
+		// The lookup needs no proof; the enrollment signs what the lookup returned.
+		expectUnsigned(calls[0]!, "POST", `{"code":"12345678"}`);
+		expectSigned(calls[1]!, "POST", `{"code":"12345678","credentialSha256":"${CREDENTIAL_SHA}"}`);
+	});
+
+	it("refuses an untrusted sender and anything but eight digits before it reads anything", async () => {
+		const untrusted = setup();
+		await expect(untrusted.enrollPhone({ code: "12345678" }, { id: 99 })).resolves.toMatchObject({
+			status: "error",
+			code: "LADO_PRESENCE_UNTRUSTED_SENDER",
+		});
+		expect(untrusted.fetch).not.toHaveBeenCalled();
+
+		for (const code of ["1234567", "123456789", "1234567a", "１２３４５６７８", "1234_5678", "", 12345678, null]) {
+			const { enrollPhone, fetch, dialog } = setup();
+			await expect(enrollPhone({ code }), JSON.stringify(code)).resolves.toMatchObject({ status: "error", code: "LADO_PHONE_CODE_INVALID" });
+			expect(fetch).not.toHaveBeenCalled();
+			expect(dialog.showMessageBox).not.toHaveBeenCalled();
+		}
+	});
+
+	it("signs nothing when the lookup fails or its answer cannot be read", async () => {
+		const wrong = { error: "validation", code: "LADO_PHONE_PAIRING_CODE_WRONG", message: "That code does not match the phone.", details: { remaining: 4 } };
+		const refused = setup({}, { phoneLookup: () => json(400, wrong) });
+		await expect(refused.enrollPhone({ code: "12345678" })).resolves.toEqual({ status: "error", code: wrong.code, message: wrong.message, details: wrong.details });
+		expect(refused.dialog.showMessageBox).not.toHaveBeenCalled();
+		expect(refused.calls).toHaveLength(1);
+
+		for (const pairing of [phonePairing({ credentialSha256: "not-a-sha" }), { deviceHint: "iPhone" }]) {
+			const unreadable = setup({}, { phoneLookup: () => json(200, pairing) });
+			await expect(unreadable.enrollPhone({ code: "12345678" })).resolves.toMatchObject({ status: "error", code: UNREADABLE });
+			expect(unreadable.dialog.showMessageBox).not.toHaveBeenCalled();
+			expect(unreadable.calls).toHaveLength(1);
+		}
+	});
+
+	it("keeps line breaks and direction controls in the phone's facts out of the dialog", async () => {
+		const { enrollPhone, dialog } = setup({}, { phoneLookup: () => json(200, phonePairing({ deviceHint: "iPhone\nFingerprint: 00000000", login: "a\u202eb@example.com" })) });
+		await enrollPhone({ code: "12345678" });
+		const detail = String(dialogOptions(dialog).detail);
+		expect(detail).not.toContain("iPhone\nFingerprint");
+		expect(detail).not.toContain("\u202e");
+	});
+
+	it("signs nothing when the human cancels", async () => {
+		const { enrollPhone, calls, dialog } = setup();
+		dialog.showMessageBox.mockResolvedValueOnce({ response: 0, checkboxChecked: false });
+		await expect(enrollPhone({ code: "12345678" })).resolves.toEqual({ status: "cancelled" });
+		expect(calls.map(({ url }) => new URL(url).pathname)).toEqual([lookupPath]);
+	});
+
+	it("words the confirmation from main's catalog in every language", async () => {
+		for (const locale of ["en", "zh-CN", "ja", "ko", "es", "fr", "de", "pt-BR"] as const) {
+			const { enrollPhone, dialog } = setup({ locale: () => locale });
+			await enrollPhone({ code: "12345678" });
+			const catalog = trayCatalogs[locale];
+			expect(dialogOptions(dialog), locale).toMatchObject({
+				message: catalog["lado.presence.phone.enrollTitle"],
+				buttons: [catalog["lado.presence.cancel"], catalog["lado.presence.phone.enroll"]],
+			});
 		}
 	});
 });

@@ -11,6 +11,7 @@ import { ConnectMobileContent } from "./ConnectMobileContent";
 import { GeneralSettingsSection } from "./GeneralSettingsSection";
 import { HarnessSettingsSection } from "./HarnessSettingsSection";
 import { KeyboardShortcutsContent } from "./KeyboardShortcutsContent";
+import { LadoPhoneApprovalSection } from "./LadoPhoneApprovalSection";
 import { LocalSetupSection } from "./LocalSetupSection";
 import { MobileDevicesSection } from "./MobileDevicesSection";
 import { ReportProblemContent } from "./ReportProblemContent";
@@ -150,6 +151,8 @@ const globalSettingsCatalog: SettingsCatalogItem[] = [
 				</SettingsSection>
 				{/* Its own section (and card) when devices are paired; renders nothing otherwise. */}
 				<MobileDevicesSection />
+				{/* LADO fork: approving plans and integrations with a phone passkey (ADR 0014); nothing until the daemon answers. */}
+				<LadoPhoneApprovalSection />
 			</>
 		),
 	},

@@ -965,3 +965,52 @@ describe("LADO account limit errors", () => {
 		expect(ladoErrorText(ko, new LadoApiError(daemon, "LADO_ACCOUNT_LIMIT_NOT_ACTIVE"))).toBe("이 계정의 사용 한도는 이미 풀렸거나 리셋 시각이 지났습니다.");
 	});
 });
+
+// Every code phone approval's loopback routes send
+// (backend/internal/service/ladophone, httpd/controllers/lado_phone.go), and
+// the one the desktop app's main process sends before it reaches the daemon.
+const phoneCodes = [
+	"LADO_PHONE_CODE_INVALID",
+	"LADO_PHONE_CREDENTIAL_INVALID",
+	"LADO_PHONE_ENROLL_CLOSED",
+	"LADO_PHONE_FUNNEL_ON",
+	"LADO_PHONE_NOT_LISTENING",
+	"LADO_PHONE_OFF",
+	"LADO_PHONE_PAIRING_CODE_WRONG",
+	"LADO_PHONE_PAIRING_LOCKED",
+	"LADO_PHONE_PAIRING_NOT_FOUND",
+	"LADO_PHONE_PASSKEY_EXISTS",
+	"LADO_PHONE_PASSKEY_NOT_FOUND",
+	"LADO_PHONE_PORT_TAKEN",
+	"LADO_PHONE_PROOF_REFUSED",
+	"LADO_PHONE_READ_FAILED",
+	"LADO_PHONE_SAVE_FAILED",
+	"LADO_PHONE_SERVE_FAILED",
+	"LADO_PHONE_SOCKET_FAILED",
+	"LADO_PHONE_TAILSCALED_SAME_USER",
+	"LADO_PHONE_TAILSCALE_UNAVAILABLE",
+	"LADO_PHONE_UNSUPPORTED",
+];
+
+describe("LADO phone approval errors", () => {
+	it("translates every phone approval code in every language", () => {
+		const daemon = "The daemon's English text";
+		for (const locale of APP_LOCALES) {
+			const t = createFullAppI18n(locale).t;
+			for (const code of phoneCodes) {
+				const text = ladoErrorText(t, new LadoApiError(daemon, code, { port: 8444, remaining: 3 }));
+				expect(text, `${locale} ${code}`).not.toBe(daemon);
+				expect(text, `${locale} ${code}`).not.toMatch(/^lado\.|{{|}}/);
+			}
+		}
+	});
+
+	it("names the serve port the daemon could not use", () => {
+		const ko = createFullAppI18n("ko").t;
+		const en = createFullAppI18n("en").t;
+		expect(ladoErrorText(en, new LadoApiError("x", "LADO_PHONE_PORT_TAKEN", { port: 8444 }))).toContain("8444");
+		expect(ladoErrorText(ko, new LadoApiError("x", "LADO_PHONE_FUNNEL_ON", { port: 8444 }))).toBe(
+			"포트 8444 에 Tailscale Funnel 이 켜져 있습니다. 먼저 끄세요.",
+		);
+	});
+});

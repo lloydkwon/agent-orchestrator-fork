@@ -1,9 +1,11 @@
 // LADO fork: plan approval, permission ceiling and protected path changes,
 // turning LADO mode off, changing a project's check commands, adopting,
 // restoring and changing local setup, approving a run's integration,
-// turning Claude in Chrome on, and changing a repository's production
+// turning Claude in Chrome on, changing a repository's production
 // database change settings or applying a pull request's SQL by hand (#97),
-// through the human at the desktop app
+// and turning phone approval on or enrolling a phone's passkey
+// (docs/LJY-PRD/adr/0014-phone-passkey-approvals.md), through the human at
+// the desktop app
 // (docs/LJY-PRD/adr/0002-human-presence-approval-channel.md).
 // Any local process can call the daemon's loopback API, so these must come
 // from here. The renderer names a plan revision, the ceiling and a mode or the
@@ -29,8 +31,11 @@ import {
 	LADO_PRESENCE_CHANGE_PROJECT_CHECKS_CHANNEL,
 	LADO_PRESENCE_CHANGE_RULE_CHANNEL,
 	LADO_PRESENCE_CHANGE_SETUP_CHANNEL,
+	LADO_PRESENCE_ENABLE_PHONE_APPROVAL_CHANNEL,
+	LADO_PRESENCE_ENROLL_PHONE_PASSKEY_CHANNEL,
 	LADO_PRESENCE_RESTORE_SETUP_CHANNEL,
 	LADO_PRESENCE_SET_LADO_MODE_CHANNEL,
+	normalizeLadoPhoneCode,
 	type LadoCeilingMode,
 	type LadoPresenceAdoptSetupResult,
 	type LadoPresenceApplyDbChangesResult,
@@ -49,6 +54,10 @@ import {
 	type LadoPresenceIntegration,
 	type LadoPresenceIntegrationResult,
 	type LadoPresenceModeResult,
+	type LadoPresencePhoneApprovalResult,
+	type LadoPresencePhonePasskey,
+	type LadoPresencePhonePasskeyResult,
+	type LadoPresencePhoneStatus,
 	type LadoPresenceProjectSettings,
 	type LadoPresenceRestoreSetupResult,
 	type LadoPresenceRule,
@@ -102,6 +111,13 @@ const UNSAFE_TEXT = /[\u0000-\u001f\u007f-\u009f\u061c\u200e\u200f\u2028\u2029\u
 const UNSAFE_CHAR = new RegExp(UNSAFE_TEXT.source);
 const SETUP_ADOPTIONS_PATH = "/api/v1/lado/setup/adoptions";
 const CLAUDE_CHROME_PATH = "/api/v1/lado/claude-chrome";
+const PHONE_STATUS_PATH = "/api/v1/lado/phone/status";
+const PHONE_ENABLE_PATH = "/api/v1/lado/phone/enable";
+const PHONE_LOOKUP_PATH = "/api/v1/lado/phone/pairings/lookup";
+const PHONE_PASSKEYS_PATH = "/api/v1/lado/phone/passkeys";
+// The tailnet HTTPS port the daemon serves the phone pages on before phone
+// approval was ever on (backend/internal/service/ladophone DefaultServePort).
+const PHONE_DEFAULT_PORT = 8444;
 const SETUP_ITEMS_PATH = "/api/v1/lado/setup/items";
 const SETUP_BINDINGS_PATH = "/api/v1/lado/setup/bindings";
 const SETUP_ITEM_PATH = /^\/api\/v1\/lado\/setup\/items\/([A-Za-z0-9_-]{1,128})$/;
@@ -376,6 +392,8 @@ export function registerLadoPresenceIpc(deps: LadoPresenceDeps): void {
 	handle(LADO_PRESENCE_CHANGE_CLAUDE_CHROME_CHANNEL, changeClaudeChrome, "Turning on Claude in Chrome failed.");
 	handle(LADO_PRESENCE_CHANGE_DB_CHANGES_CHANNEL, changeDbChanges, "The database change settings change failed.");
 	handle(LADO_PRESENCE_APPLY_DB_CHANGES_CHANNEL, applyDbChanges, "Applying the database changes failed.");
+	handle(LADO_PRESENCE_ENABLE_PHONE_APPROVAL_CHANNEL, enablePhoneApproval, "Turning on phone approval failed.");
+	handle(LADO_PRESENCE_ENROLL_PHONE_PASSKEY_CHANNEL, enrollPhonePasskey, "Enrolling the phone's passkey failed.");
 }
 
 async function approvePlan(
@@ -1027,6 +1045,87 @@ async function changeClaudeChrome(
 	return { status: "changed", settings: changed };
 }
 
+// Phone approval lets a passkey on the phone approve plans and integrations
+// (ADR 0014), and any local process can call the daemon, so only the human
+// may turn it on. Main reads the state from the daemon, names the address the
+// phone uses and what stays on the desktop, then signs "{}". Turning it off
+// needs no confirmation: the renderer sends that to the daemon itself.
+async function enablePhoneApproval(
+	deps: LadoPresenceDeps,
+	sender: WebContents,
+	_input: unknown,
+): Promise<LadoPresencePhoneApprovalResult> {
+	if (!deps.isTrustedSender(sender)) {
+		return failure("LADO_PRESENCE_UNTRUSTED_SENDER", "Only the AO app window can turn on phone approval.");
+	}
+	// Nothing the renderer sends is used.
+	const read = await callDaemon(deps, PHONE_STATUS_PATH, { method: "GET", headers: { accept: "application/json" } });
+	if (!read.ok) return read.failure;
+	const current = phoneStatus(read.body);
+	if (!current) return failure(ANSWER_UNREADABLE, "The AO daemon's answer about phone approval could not be read.");
+	// The daemon refuses this as well; asking first would waste a confirmation.
+	if (!current.supported) return failure("LADO_PHONE_UNSUPPORTED", "Phone approval works on Linux only.");
+	// On and serving: there is nothing to turn on. On but not listening is
+	// turned on again, which reopens the socket.
+	if (current.enabled && current.listening) return { status: "enabled", phone: current };
+	const t = await translator(deps);
+	const address = current.origin
+		? oneLine(current.origin)
+		: t("lado.presence.phone.enableAddressUnknown", { port: current.servePort > 0 ? current.servePort : PHONE_DEFAULT_PORT });
+	const detail = t("lado.presence.phone.enableDetail", { address });
+	if (!(await confirm(deps, t, t("lado.presence.phone.enableTitle"), detail, t("lado.presence.phone.turnOn")))) {
+		return { status: "cancelled" };
+	}
+
+	// The daemon checks the proof against exactly these bytes.
+	const sent = await callDaemon(deps, PHONE_ENABLE_PATH, signed(deps, "POST", PHONE_ENABLE_PATH, "{}"));
+	if (!sent.ok) return sent.failure;
+	const phone = phoneStatus(sent.body);
+	if (!phone) return failure(ANSWER_UNREADABLE, "Phone approval was turned on, but the AO daemon's answer could not be read.");
+	return { status: "enabled", phone };
+}
+
+// A phone made a passkey and shows a code; the passkey waits in the daemon's
+// memory. Only the code crosses from the renderer: main looks the pending
+// passkey up by it, shows the phone's facts and the fingerprint the phone
+// shows too, and on confirm signs the code with the credential the lookup
+// named, so the daemon enrolls exactly that passkey.
+async function enrollPhonePasskey(
+	deps: LadoPresenceDeps,
+	sender: WebContents,
+	input: unknown,
+): Promise<LadoPresencePhonePasskeyResult> {
+	if (!deps.isTrustedSender(sender)) {
+		return failure("LADO_PRESENCE_UNTRUSTED_SENDER", "Only the AO app window can enroll a phone's passkey.");
+	}
+	const code = normalizeLadoPhoneCode(record(input)?.code);
+	if (!code) return failure("LADO_PHONE_CODE_INVALID", "Type the eight digits the phone shows.");
+	// The lookup needs no proof; five wrong codes close the enrollment.
+	const read = await callDaemon(deps, PHONE_LOOKUP_PATH, jsonRequest("POST", JSON.stringify({ code })));
+	if (!read.ok) return read.failure;
+	const pairing = phonePairing(read.body);
+	if (!pairing) return failure(ANSWER_UNREADABLE, "The AO daemon's answer about the phone's passkey could not be read.");
+	const t = await translator(deps);
+	const locale = await deps.locale();
+	const detail = t("lado.presence.phone.enrollDetail", {
+		device: pairing.deviceHint || t("lado.presence.phone.deviceUnknown"),
+		login: pairing.login,
+		time: formatTime(locale, pairing.createdAt),
+		fingerprint: pairing.fingerprint,
+	});
+	if (!(await confirm(deps, t, t("lado.presence.phone.enrollTitle"), detail, t("lado.presence.phone.enroll")))) {
+		return { status: "cancelled" };
+	}
+
+	// The proof's subject is the credential's sha256 in this body.
+	const body = JSON.stringify({ code, credentialSha256: pairing.credentialSha256 });
+	const sent = await callDaemon(deps, PHONE_PASSKEYS_PATH, signed(deps, "POST", PHONE_PASSKEYS_PATH, body));
+	if (!sent.ok) return sent.failure;
+	const passkey = phonePasskey(sent.body);
+	if (!passkey) return failure(ANSWER_UNREADABLE, "The passkey was enrolled, but the AO daemon's answer could not be read.");
+	return { status: "enrolled", passkey };
+}
+
 // A repository's production database change settings name a command that
 // runs outside any agent sandbox with secrets against the production
 // database (#97), so only the human may change them. Main reads the settings
@@ -1329,6 +1428,48 @@ function claudeChromeSettings(body: unknown): LadoPresenceClaudeChromeSettings |
 	const settings = record(body);
 	if (typeof settings?.chatSessions !== "boolean" || typeof settings.ladoWorkers !== "boolean") return null;
 	return { chatSessions: settings.chatSessions, ladoWorkers: settings.ladoWorkers };
+}
+
+// Phone approval's state, from LadoPhoneStatusResponse.
+function phoneStatus(body: unknown): LadoPresencePhoneStatus | null {
+	const status = record(body);
+	if (
+		typeof status?.supported !== "boolean" ||
+		typeof status.enabled !== "boolean" ||
+		typeof status.listening !== "boolean" ||
+		typeof status.origin !== "string" ||
+		typeof status.servePort !== "number"
+	) {
+		return null;
+	}
+	return status as LadoPresencePhoneStatus;
+}
+
+// The passkey a phone made, from LadoPhonePairingResponse, with its words
+// as one line each: they come from the phone's request.
+function phonePairing(body: unknown): { deviceHint: string; login: string; createdAt: string; fingerprint: string; credentialSha256: string } | null {
+	const pairing = record(body);
+	const { deviceHint, login, createdAt, fingerprint, credentialSha256 } = pairing ?? {};
+	if (
+		typeof deviceHint !== "string" ||
+		typeof login !== "string" ||
+		typeof createdAt !== "string" ||
+		typeof fingerprint !== "string" ||
+		!/^[0-9a-f]{8}$/.test(fingerprint) ||
+		typeof credentialSha256 !== "string" ||
+		!SHA256_HEX.test(credentialSha256) ||
+		!credentialSha256.startsWith(fingerprint)
+	) {
+		return null;
+	}
+	return { deviceHint: excerpt(deviceHint, MAX_EXAMPLE_CHARS), login: excerpt(login, MAX_EXAMPLE_CHARS), createdAt, fingerprint, credentialSha256 };
+}
+
+// An enrolled passkey, from LadoPhonePasskeyResponse.
+function phonePasskey(body: unknown): LadoPresencePhonePasskey | null {
+	const passkey = record(body);
+	if (typeof passkey?.id !== "string" || typeof passkey.fingerprint !== "string" || typeof passkey.revoked !== "boolean") return null;
+	return passkey as LadoPresencePhonePasskey;
 }
 
 // The name the dialog shows, from ProjectGetResponse; a project without one
