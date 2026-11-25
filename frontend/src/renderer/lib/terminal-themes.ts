@@ -15,18 +15,21 @@ export function buildTerminalThemes(): { dark: ITheme; light: ITheme } {
 		? cssVar("--background")
 		: cssVar("--color-bg-terminal-opaque") || cssVar("--color-bg-terminal");
 	const terminalForeground = namedThemeActive ? cssVar("--foreground") : cssVar("--color-text-terminal");
-	const terminalCursor = namedThemeActive ? cssVar("--primary") : cssVar("--color-working");
+	const terminalCursor = namedThemeActive ? cssVar("--color-term-cursor") : cssVar("--color-working");
+	const terminalCursorText = namedThemeActive ? cssVar("--color-term-cursor-text") : terminalBg;
 	// Collapse ANSI black into the plate. Agent TUIs (Cursor's prompt bar) fill
 	// rows with "black"; leaving the slot as a true dark color paints a black
 	// stripe on the light canvas. Same approach as packages/mobile/lib/theme.ts.
-	const ansiBlack = terminalBg;
+	// Named themes carry the collapsed value in their token, except one that
+	// mirrors a native terminal's palette and keeps its own black.
+	const ansiBlack = namedThemeActive ? cssVar("--color-term-black") : terminalBg;
 	const dark: ITheme = {
 		background: terminalBg,
 		// AO owns the scrollbar gutter; xterm 6 otherwise paints a white ruler edge.
 		overviewRulerBorder: "transparent",
 		foreground: terminalForeground,
 		cursor: terminalCursor,
-		cursorAccent: terminalBg,
+		cursorAccent: terminalCursorText,
 		selectionBackground: cssVar("--color-term-selection-dark"),
 		selectionInactiveBackground: cssVar("--color-term-selection-inactive"),
 		black: ansiBlack,
@@ -56,8 +59,8 @@ export function buildTerminalThemes(): { dark: ITheme; light: ITheme } {
 		// `cursorAccent`. --color-working is fine on dark plates but reads as a
 		// low-contrast wash on the light terminal bg (#f5f5f4), especially while
 		// blinking. Use the terminal foreground so the block stays visible.
-		cursor: terminalForeground,
-		cursorAccent: terminalBg,
+		cursor: namedThemeActive ? terminalCursor : terminalForeground,
+		cursorAccent: terminalCursorText,
 		selectionBackground: cssVar("--color-term-selection-light"),
 		selectionInactiveBackground: cssVar("--color-term-selection-inactive-light"),
 		black: ansiBlack,

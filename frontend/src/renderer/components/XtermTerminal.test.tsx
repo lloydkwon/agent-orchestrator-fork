@@ -36,6 +36,7 @@ const state = vi.hoisted(() => ({
 		write(data: Uint8Array, done?: () => void): void;
 		cols: number;
 		screenElement: HTMLElement;
+		registerCharacterJoiner: ReturnType<typeof vi.fn>;
 		keyHandler?: (event: KeyboardEvent) => boolean;
 		wheelHandler?: (event: WheelEvent) => boolean;
 		selection: string;
@@ -234,6 +235,7 @@ vi.mock("@xterm/xterm", () => ({
 			this.scrollListeners.add(listener);
 			return { dispose: () => this.scrollListeners.delete(listener) };
 		}
+		registerCharacterJoiner = vi.fn(() => 1);
 		onKey(listener: (event: { key: string }) => void) {
 			this.keyListeners.add(listener);
 			return { dispose: () => this.keyListeners.delete(listener) };
@@ -544,11 +546,49 @@ describe("XtermTerminal", () => {
 		}
 	});
 
-	it("preserves the agent TUI palette without contrast remapping", () => {
+	it("does not join cells off Linux", () => {
+		render(<XtermTerminal theme="dark" />);
+		expect(state.lastTerminal!.registerCharacterJoiner).not.toHaveBeenCalled();
+	});
+
+	it("joins operator runs for ligatures on Linux, except while searching", async () => {
+		document.documentElement.dataset.aoPlatform = "linux";
+		const fonts: string[] = [];
+		const getContext = vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockImplementation(
+			() =>
+				({
+					set font(value: string) {
+						fonts.push(value);
+					},
+					measureText: (text: string) => ({ width: text.length * 8 }),
+				}) as unknown as RenderingContext,
+		);
+		try {
+			const { container } = render(<XtermTerminal theme="dark" fontSize={14} />);
+			const term = state.lastTerminal!;
+			term.dimensions = { css: { cell: { width: 8, height: 19 } } };
+			const joiner = term.registerCharacterJoiner.mock.calls[0]?.[0] as (text: string) => unknown;
+			expect(joiner("a -> b")).toEqual([[2, 4]]);
+			expect(fonts.at(-1)).toMatch(/ 14px /);
+
+			term.refresh.mockClear();
+			fireEvent.contextMenu(container.firstElementChild!);
+			fireEvent.click(await screen.findByText("Search terminal"));
+			await screen.findByRole("searchbox", { name: "Search terminal" });
+			expect(joiner("a -> b")).toEqual([]);
+			expect(term.refresh).toHaveBeenCalledWith(0, term.rows - 1);
+		} finally {
+			getContext.mockRestore();
+			delete document.documentElement.dataset.aoPlatform;
+		}
+	});
+
+	it("keeps bold colors and lifts only near-invisible text, as Ghostty does", () => {
 		render(<XtermTerminal theme="dark" />);
 
-		expect(state.lastTerminal!.options.drawBoldTextInBrightColors).toBe(true);
-		expect(state.lastTerminal!.options.minimumContrastRatio).toBe(1);
+		// LADO fork: Ghostty leaves bold-color unset.
+		expect(state.lastTerminal!.options.drawBoldTextInBrightColors).toBe(false);
+		expect(state.lastTerminal!.options.minimumContrastRatio).toBe(1.6);
 	});
 
 	it("focuses the terminal when human input is requested", async () => {
@@ -829,6 +869,38 @@ describe("XtermTerminal", () => {
 			style.remove();
 			delete document.documentElement.dataset.styleTheme;
 			act(() => useUiStore.setState({ themeStyle: "orchestrate" }));
+		}
+	});
+
+	it("builds the terminal with the terminal font, 14px, a 1.2 line height and a steady cursor", () => {
+		const style = document.createElement("style");
+		style.textContent = `* { --font-mono: "Mono Face"; --font-terminal: "Terminal Face", "Mono Face"; }`;
+		document.head.appendChild(style);
+
+		try {
+			render(<XtermTerminal theme="dark" />);
+			expect(state.lastTerminal!.options).toMatchObject({
+				cursorBlink: false,
+				fontFamily: expect.stringMatching(/^"Terminal Face", ?"Mono Face"$/),
+				fontSize: 14,
+				lineHeight: 1.2,
+				minimumContrastRatio: 1.6,
+			});
+		} finally {
+			style.remove();
+		}
+	});
+
+	it("falls back to the mono font when no terminal font is defined", () => {
+		const style = document.createElement("style");
+		style.textContent = `* { --font-mono: "Mono Face"; }`;
+		document.head.appendChild(style);
+
+		try {
+			render(<XtermTerminal theme="dark" />);
+			expect(state.lastTerminal!.options.fontFamily).toBe('"Mono Face"');
+		} finally {
+			style.remove();
 		}
 	});
 
@@ -2685,8 +2757,8 @@ describe("XtermTerminal", () => {
 	it("translates wheel motion into SGR wheel reports for zellij scrollback", () => {
 		const onInput = vi.fn();
 		render(<XtermTerminal theme="dark" onReady={(terminal) => terminal.onUserInput(onInput)} />);
-		// rowHeight = fontSize(12) * lineHeight(1.35) = 16.2px; -50px => 3 lines up.
-		const suppressed = state.lastTerminal!.wheelHandler!({ clientX: 0, clientY: 0, deltaY: -50 } as WheelEvent);
+		// rowHeight = fontSize(14) * lineHeight(1.2) = 16.8px; -51px => 3 lines up.
+		const suppressed = state.lastTerminal!.wheelHandler!({ clientX: 0, clientY: 0, deltaY: -51 } as WheelEvent);
 
 		expect(suppressed).toBe(false);
 		expect(onInput).toHaveBeenCalledWith("\x1b[<64;1;1M\x1b[<64;1;1M\x1b[<64;1;1M", "wheel");
@@ -2750,9 +2822,9 @@ describe("XtermTerminal", () => {
 		state.lastTerminal!.modes.mouseTrackingMode = "none";
 		state.lastTerminal!.buffer.active.type = "normal";
 
-		// rowHeight = 16.2px; -50px => 3 lines up. The pane never sees these bytes;
+		// rowHeight = 16.8px; -51px => 3 lines up. The pane never sees these bytes;
 		// we scroll the terminal's retained scrollback locally instead.
-		expect(state.lastTerminal!.wheelHandler!({ clientX: 0, clientY: 0, deltaY: -50 } as WheelEvent)).toBe(false);
+		expect(state.lastTerminal!.wheelHandler!({ clientX: 0, clientY: 0, deltaY: -51 } as WheelEvent)).toBe(false);
 		expect(state.lastTerminal!.scrollLines).toHaveBeenLastCalledWith(-3);
 		expect(onInput).not.toHaveBeenCalled();
 
@@ -2769,7 +2841,7 @@ describe("XtermTerminal", () => {
 		// page key per notch is the best fallback.
 		state.lastTerminal!.buffer.active.type = "alternate";
 
-		expect(state.lastTerminal!.wheelHandler!({ clientX: 0, clientY: 0, deltaY: -50 } as WheelEvent)).toBe(false);
+		expect(state.lastTerminal!.wheelHandler!({ clientX: 0, clientY: 0, deltaY: -51 } as WheelEvent)).toBe(false);
 		expect(onInput).toHaveBeenLastCalledWith("\x1b[5~", "wheel");
 		expect(state.lastTerminal!.scrollLines).not.toHaveBeenCalled();
 
@@ -2786,7 +2858,7 @@ describe("XtermTerminal", () => {
 		// via the paneScrollsByKeyboard hint, tested separately.
 		state.lastTerminal!.modes.mouseTrackingMode = "any";
 
-		expect(state.lastTerminal!.wheelHandler!({ clientX: 0, clientY: 0, deltaY: -50 } as WheelEvent)).toBe(false);
+		expect(state.lastTerminal!.wheelHandler!({ clientX: 0, clientY: 0, deltaY: -51 } as WheelEvent)).toBe(false);
 		expect(onInput).toHaveBeenLastCalledWith("\x1b[<64;1;1M".repeat(3), "wheel");
 	});
 
