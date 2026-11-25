@@ -321,7 +321,7 @@ const SETUP_KIND_KEYS: Record<SetupKind, PresenceMessageKey> = {
 export type LadoPresenceDeps = {
 	ipcMain: Pick<IpcMain, "handle">;
 	dialog: Pick<Dialog, "showMessageBox">;
-	/** net.fetch in the app. */
+	/** Node fetch in the app; Electron net.fetch adds browser metadata without Origin, which the daemon rejects. */
 	fetch: (url: string, init: RequestInit) => Promise<Response>;
 	/** The per-launch desktop token the daemon received over stdin. */
 	token: () => string;
