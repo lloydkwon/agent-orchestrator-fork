@@ -34,7 +34,7 @@ import type {
 } from "../hooks/useTerminalSession";
 import { aoBridge } from "../lib/bridge";
 import { isDialogOrMenuOpenOutside } from "../lib/dom-selectors";
-import { TERMINAL_FONT_SIZE_DEFAULT } from "../lib/design-tokens";
+import { TERMINAL_FONT_SIZE_DEFAULT, TERMINAL_LINE_HEIGHT, TERMINAL_MINIMUM_CONTRAST } from "../lib/design-tokens";
 import { isWebLink, openLinkInSystemBrowser } from "../lib/external-link-policy";
 import { findSessionLinks } from "../lib/session-links";
 import { isMacPlatform } from "../lib/platform";
@@ -50,6 +50,7 @@ import {
 	type OscTerminalColors,
 } from "../lib/osc-color-report";
 import { buildTerminalThemes } from "../lib/terminal-themes";
+import { createLigatureJoiner } from "../lib/terminal-ligatures";
 import { leaseWebglRenderer, type WebglLease } from "../lib/terminal-webgl-pool";
 import { useUiStore, type Theme, type ThemeStyle } from "../stores/ui-store";
 import { TerminalSearch } from "./TerminalSearch";
@@ -483,6 +484,13 @@ export function XtermTerminal(props: XtermTerminalProps) {
 	});
 	const [copiedToast, setCopiedToast] = useState(false);
 	const [searchOpen, setSearchOpen] = useState(false);
+	const searchOpenRef = useRef(searchOpen);
+	useEffect(() => {
+		searchOpenRef.current = searchOpen;
+		// Ligatures pause while search highlights cells; redraw what is on screen.
+		const term = termRef.current;
+		term?.refresh(0, term.rows - 1);
+	}, [searchOpen]);
 	const copiedToastTimerRef = useRef<number | undefined>(undefined);
 	const showCopiedToastRef = useRef<() => void>(() => undefined);
 	// The web link currently under the cursor, tracked via the link providers'
@@ -697,25 +705,26 @@ export function XtermTerminal(props: XtermTerminalProps) {
 			term = new Terminal({
 				// Required for the Unicode 11 width addon below.
 				allowProposedApi: true,
-				cursorBlink: true,
-				// Resolve the Nerd Font stack from --font-mono (styles.css) at
+				// LADO fork: a steady cursor, like the owner's other terminals.
+				cursorBlink: false,
+				// Resolve the font stack from --font-terminal (tokens.css) at
 				// construction so terminal glyphs follow the app's font tokens. The
 				// box-drawing grid is rasterized by the WebGL renderer itself,
 				// but powerline separators and file-type icons are real PUA codepoints
 				// that must come from a system-installed Nerd Font.
 				fontFamily:
+					getComputedStyle(shell).getPropertyValue("--font-terminal").trim() ||
 					getComputedStyle(shell).getPropertyValue("--font-mono").trim() ||
 					'ui-monospace, Menlo, Monaco, "Courier New", monospace',
 				fontSize: props.fontSize ?? TERMINAL_FONT_SIZE_DEFAULT,
-				lineHeight: 1.35,
+				lineHeight: TERMINAL_LINE_HEIGHT,
 				linkHandler: { activate: activateLink, hover: trackHover, leave: clearHover },
-				// Preserve standard terminal semantics: many agent TUIs use bold ANSI
-				// colors specifically to select the bright palette.
-				drawBoldTextInBrightColors: true,
-				// Agent TUIs already choose foreground/background pairs. A forced
-				// contrast transform changes their RGB values and makes syntax and diff
-				// colors diverge from the same CLI in a native terminal.
-				minimumContrastRatio: 1,
+				// LADO fork: bold keeps its own color, as in Ghostty (bold-color unset).
+				drawBoldTextInBrightColors: false,
+				// LADO fork: the owner's Ghostty minimum-contrast. Agent TUIs choose their
+				// own pairs, so this stays low: it changes only text that is close to
+				// its background.
+				minimumContrastRatio: TERMINAL_MINIMUM_CONTRAST,
 				// Alt-buffer panes (tmux attach, mouse-tracking agent TUIs) never feed
 				// this buffer — the alt screen doesn't accumulate scrollback — so this
 				// only matters for normal-buffer panes that print their transcript and
@@ -759,6 +768,17 @@ export function XtermTerminal(props: XtermTerminalProps) {
 		term.loadAddon(searchAddon);
 
 		term.open(host);
+		// LADO fork: ligatures, as in Ghostty. The joiner goes with the terminal.
+		if (document.documentElement.dataset.aoPlatform === "linux") {
+			term.registerCharacterJoiner(
+				createLigatureJoiner(() => ({
+					font: `${term.options.fontWeight ?? "normal"} ${term.options.fontSize}px ${term.options.fontFamily}`,
+					cellWidth: term.dimensions?.css.cell.width ?? 0,
+					devicePixelRatio: window.devicePixelRatio,
+					paused: searchOpenRef.current,
+				})),
+			);
+		}
 		gridMeasuredRef.current = false;
 		let visibleContentReported = false;
 		const reportVisibleContent = () => {
@@ -1478,7 +1498,12 @@ export function XtermTerminal(props: XtermTerminalProps) {
 			oscColorForwarder.push(data);
 			cursorPositionForwarder.push(data);
 		});
-		const keyInput = term.onKey(({ key }) => emitUserInput(key, "keyboard"));
+		let imeHandledKey = false;
+		let composedText = "";
+		const keyInput = term.onKey(({ key }) => {
+			imeHandledKey = false;
+			emitUserInput(key, "keyboard");
+		});
 
 		// Translate wheel motion into SGR wheel reports for the pane (see
 		// sgrWheelReport), one report per scrolled line. WheelEvent.deltaMode
@@ -1553,10 +1578,33 @@ export function XtermTerminal(props: XtermTerminalProps) {
 			pasteText(text);
 		};
 		const compositionInput = (event: CompositionEvent) => {
+			composedText = event.data;
 			emitUserInput(event.data, "composition");
+		};
+		// An input method may commit text outside the composition: ibus-hangul
+		// clears its preedit first, so compositionend is empty and the syllable
+		// follows as a plain insertText. Take inserted text only while the last
+		// keydown was one the input method handled (229): xterm reports every other
+		// key through onKey. Listen on the host, not the shell, so text typed in the
+		// terminal search box stays out of the PTY.
+		const inputMethodKey = (event: KeyboardEvent) => {
+			imeHandledKey = event.keyCode === 229;
+			composedText = "";
+		};
+		const committedInput = (event: Event) => {
+			const { data, inputType } = event as InputEvent;
+			if (!imeHandledKey || inputType !== "insertText" || !data) return;
+			// The composition already carried this text.
+			if (data === composedText) {
+				composedText = "";
+				return;
+			}
+			emitUserInput(data, "composition");
 		};
 		shell.addEventListener("paste", pasteInput, true);
 		shell.addEventListener("compositionend", compositionInput, true);
+		host.addEventListener("keydown", inputMethodKey, true);
+		host.addEventListener("input", committedInput, true);
 
 		// A file dropped on the pane inserts its path, mirroring a native terminal
 		// so an agent (e.g. Claude Code) attaches it. The sandboxed renderer cannot
@@ -1791,6 +1839,8 @@ export function XtermTerminal(props: XtermTerminalProps) {
 			shell.removeEventListener("contextmenu", openContextMenu);
 			shell.removeEventListener("paste", pasteInput, true);
 			shell.removeEventListener("compositionend", compositionInput, true);
+			host.removeEventListener("keydown", inputMethodKey, true);
+			host.removeEventListener("input", committedInput, true);
 			shell.removeEventListener("dragover", dragOverInput);
 			shell.removeEventListener("drop", dropInput);
 			contextMenuActionsRef.current = null;

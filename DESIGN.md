@@ -191,6 +191,7 @@ Use the font tokens. On macOS they resolve to the system faces (SF Pro / SF Mono
 
 - **UI and body:** `--font-family-base` (`-apple-system` on macOS, `Geist Variable` elsewhere).
 - **Code, terminal, compact labels:** `--font-family-mono` (`SF Mono` on macOS, `Geist Mono Variable` elsewhere).
+- **Terminal on Linux (LADO fork exception):** xterm alone uses `--font-terminal`, the owner's native terminal faces, at 14px, 1.2 line height, a 1.6 minimum contrast, unbrightened bold and a steady cursor. Everywhere else it resolves to `--font-family-mono`.
 - **Weights:** 500 medium for controls and small hierarchy; 600 only for headings, selected values, and genuinely primary emphasis.
 - **Numbers:** use tabular figures for metrics, timestamps, diffs, and columns where alignment matters.
 
