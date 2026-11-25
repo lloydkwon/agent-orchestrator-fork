@@ -191,6 +191,7 @@ import {
 	shouldSignalAttention,
 	shouldToast,
 	toastSilent,
+	toastUrgency,
 } from "./main/notification-signals";
 import { buildLinuxAppMenuTemplate, buildMacAppMenuTemplate, buildWindowsAppMenuTemplate } from "./main/menu";
 import { ancestorRepositorySetupWarning, resolveCheckedOutBranch, scanImportFolder } from "./main/import-folder-scan";
@@ -2987,6 +2988,9 @@ ipcMain.handle(
 				// sound notifications off. Honoured on macOS/Windows only; Linux
 				// notification daemons ignore it (see toastSilent).
 				silent: toastSilent(process.platform, soundNotificationsEnabled, playsSound),
+				// LADO fork: critical for the types the user must see, so GNOME's Do
+				// Not Disturb still shows their banner (see toastUrgency).
+				urgency: toastUrgency(process.platform, notification.type),
 				// AO logo as the notification icon on Windows/Linux. Omitted on macOS,
 				// where a custom icon renders only as a redundant right-side content image —
 				// macOS uses the app-bundle icon (the AO logo in a packaged build) as the

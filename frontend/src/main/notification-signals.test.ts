@@ -7,6 +7,7 @@ import {
 	shouldSignalAttention,
 	shouldToast,
 	toastSilent,
+	toastUrgency,
 	type NotificationType,
 } from "./notification-signals";
 
@@ -90,6 +91,31 @@ describe("toastSilent", () => {
 		[true, true],
 	])("on linux never claims control (enabled=%s, playsSound=%s)", (enabled, playsSound) => {
 		expect(toastSilent("linux", enabled, playsSound)).toBeUndefined();
+	});
+});
+
+// LADO fork: a GNOME session in Do Not Disturb shows a banner only for a
+// critical notification; a normal one goes to the message list unseen.
+describe("toastUrgency", () => {
+	it.each(["needs_input", "ready_to_merge", "lado_alert"])("on linux marks %s critical", (type) => {
+		expect(toastUrgency("linux", type)).toBe("critical");
+	});
+
+	it.each(["pr_merged", "pr_closed_unmerged", "review_completed", "some_future_type"])(
+		"on linux keeps %s normal",
+		(type) => {
+			expect(toastUrgency("linux", type)).toBe("normal");
+		},
+	);
+
+	it("on linux keeps a toast without a type normal", () => {
+		expect(toastUrgency("linux", undefined)).toBe("normal");
+	});
+
+	// Electron reads `urgency` on Linux only.
+	it.each(["darwin", "win32"] as const)("on %s sets no urgency", (platform) => {
+		expect(toastUrgency(platform, "needs_input")).toBeUndefined();
+		expect(toastUrgency(platform, "pr_merged")).toBeUndefined();
 	});
 });
 
