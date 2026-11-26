@@ -170,18 +170,29 @@ func (s *Service) collectAlerts(ctx context.Context, since, now time.Time) error
 
 // collectRun adds the notices of a task's run: its start, its PR, and its
 // end when it completed or failed. A queue entry that ran out of attempts
-// failed without a run.
+// failed without a run. A run in parts starts when its parts run starts,
+// before Execution holds a worker: its part workers never open the pull
+// request, and its integration worker, which does, starts as the
+// integration.
 func (s *Service) collectRun(ctx context.Context, task domain.LadoTask, since, now time.Time) {
 	n := issueNumber(task.IssueRef)
-	if q := task.Queue; q.ID != "" && !q.FailedAt.IsZero() && !q.FailedAt.Before(since) {
+	q := task.Queue
+	if q.ID != "" && !q.FailedAt.IsZero() && !q.FailedAt.Before(since) {
 		s.add(ctx, task.ProjectID, "entry_failed:"+string(q.ID), domain.LadoNoticeRunFailed(n, domain.LadoFailedAttemptsExhausted), q.FailedAt, now)
+	}
+	if q.ID != "" && !q.PartsStartedAt.IsZero() && !q.PartsStartedAt.Before(since) {
+		s.add(ctx, task.ProjectID, "parts_started:"+string(q.ID), domain.LadoNoticePartsStarted(n, task.Parts.Total), q.PartsStartedAt, now)
 	}
 	e := task.Execution
 	if e.SessionID == "" || e.StartedAt.Before(since) {
 		return
 	}
 	run := string(e.SessionID)
-	s.add(ctx, task.ProjectID, "started:"+run, domain.LadoNoticeStarted(n), e.StartedAt, now)
+	started := domain.LadoNoticeStarted(n)
+	if e.Role == domain.LadoRoleIntegration {
+		started = domain.LadoNoticeIntegrationStarted(n)
+	}
+	s.add(ctx, task.ProjectID, "started:"+run, started, e.StartedAt, now)
 	if e.PR.URL != "" {
 		s.add(ctx, task.ProjectID, "pr:"+run+":"+e.PR.URL, domain.LadoNoticePROpened(n, e.PR.URL), now, now)
 	}

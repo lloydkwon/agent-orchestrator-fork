@@ -709,6 +709,9 @@ const (
 	ladoNoticeRevision    = "#%d 계획 리비전 %d — 칸반에서 확인"
 	ladoNoticePlanFailed  = "#%d 계획 실패: %s"
 	ladoNoticeStarted     = "#%d 실행 시작"
+	ladoNoticePartsStart  = "#%d 실행 시작 (파트 %d개)"
+	ladoNoticePartsSplit  = "#%d 실행 시작 (파트로 나눔)"
+	ladoNoticeIntegration = "#%d 통합 시작"
 	ladoNoticePROpened    = "#%d PR #%d 열림"
 	ladoNoticePROpenedURL = "#%d PR 열림"
 	ladoNoticeCompleted   = "#%d 완료"
@@ -748,6 +751,21 @@ func LadoNoticePlanFailed(issue int, code string) string {
 
 // LadoNoticeStarted is the line for a worker LADO started.
 func LadoNoticeStarted(issue int) string { return ladoNoticeLine(ladoNoticeStarted, issue) }
+
+// LadoNoticePartsStarted is the line for a parts run LADO started, with its
+// number of parts when they are known.
+func LadoNoticePartsStarted(issue, parts int) string {
+	if parts > 0 {
+		return ladoNoticeLine(ladoNoticePartsStart, issue, parts)
+	}
+	return ladoNoticeLine(ladoNoticePartsSplit, issue)
+}
+
+// LadoNoticeIntegrationStarted is the line for the integration worker of a
+// parts run, which opens the task's pull request.
+func LadoNoticeIntegrationStarted(issue int) string {
+	return ladoNoticeLine(ladoNoticeIntegration, issue)
+}
 
 // LadoNoticePROpened is the line for a worker's PR, numbered when its URL
 // ends in one.
