@@ -20,10 +20,13 @@ import {
 	Archive,
 	CalendarClock,
 	ChevronRight,
+	CircleAlert,
+	CircleCheck,
 	Download,
 	File,
 	Folder,
 	FolderOpen,
+	LoaderCircle,
 	LogIn,
 	LogOut,
 	MoreVertical,
@@ -74,7 +77,7 @@ import {
 	STANDALONE_PROJECT_KIND,
 	STANDALONE_WORKSPACE_ID,
 } from "../types/workspace";
-import { getSessionStatusDotView } from "../lib/session-presentation";
+import { getSessionStatusGlyphView } from "../lib/session-presentation";
 import { deriveSessionAgentSwitchPresentation } from "../lib/agent-switch-presentation";
 import { aoBridge } from "../lib/bridge";
 import { hasTrustedApiBaseUrl } from "../lib/api-client";
@@ -566,24 +569,40 @@ function useSelection() {
 	}), [goArtifacts, goAutomations, goConnectMobile, goGlobalSettings, goHome, goProject, goSession, goSettings, goStandaloneBoard, params.hostId, params.projectId, params.sessionId, pathname]);
 }
 
-// Colour tracks the session's board section, preserving SCM state while the
-// agent runs; motion stays on raw agent activity. A no-PR idle session turns
-// blue when it starts working. See getSessionStatusDotView for the lane mapping.
+const SESSION_STATUS_GLYPH_ICONS = {
+	working: LoaderCircle,
+	needs_you: CircleAlert,
+	done: CircleCheck,
+} as const;
+
+// LADO fork: 상태 칸 하나에 상태 하나 — 작업 중은 스피너, 사람 기다림은 경고, 끝난 턴은 체크가 점 자리를
+// 차지한다(mux 와 같은 규칙, 판정은 getSessionStatusGlyphView 한 곳). 칸 폭은 w-5(20px)로 고정해서 —
+// 예전 점의 px-1.5 + size-2 와 같은 폭이다 — 모양이 바뀌어도 제목과 «더 보기» 줄의 들여쓰기가 움직이지 않는다.
 function SessionStatusDot({ session }: { session: WorkspaceSession }) {
-	const dot = getSessionStatusDotView(session);
+	const view = getSessionStatusGlyphView(session);
+	const Icon = view.glyph === "dot" ? null : SESSION_STATUS_GLYPH_ICONS[view.glyph];
 	return (
 		<span
 			aria-hidden="true"
-			className="relative z-[1] inline-flex shrink-0 items-center justify-center px-1.5"
+			className="relative z-[1] inline-flex w-5 shrink-0 items-center justify-center"
 		>
-			<span
-				className={cn(
-					"size-2 rounded-full",
-					dot.className,
-					dot.breathe && "animate-status-pulse",
-				)}
-				data-session-status={session.status}
-			/>
+			{Icon ? (
+				<Icon
+					className={cn(
+						"size-icon-sm shrink-0",
+						view.glyph === "working" && "animate-spin motion-reduce:animate-none",
+						view.className,
+					)}
+					data-session-status={session.status}
+					data-status-glyph={view.glyph}
+				/>
+			) : (
+				<span
+					className={cn("size-2 rounded-full", view.className)}
+					data-session-status={session.status}
+					data-status-glyph="dot"
+				/>
+			)}
 		</span>
 	);
 }

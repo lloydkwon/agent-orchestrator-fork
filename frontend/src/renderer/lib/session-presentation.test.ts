@@ -4,6 +4,7 @@ import {
 	getAgentActivityView,
 	getAttentionZoneView,
 	getSessionStatusDotView,
+	getSessionStatusGlyphView,
 	getSessionStatusView,
 	getSessionTimelinePillView,
 	isAgentActivityWorking,
@@ -160,6 +161,83 @@ describe("session presentation", () => {
 				sessionWith({ status: "idle", activity: { state: "active", lastActivityAt: "" } }),
 			),
 		).toEqual({ className: "bg-status-working", breathe: true });
+	});
+
+	// 사이드바의 상태 칸은 mux 의 규칙을 따른다 — 살아 있는 상태가 있으면 그 모양이 점 자리를 차지한다.
+	// 작업 중은 깜빡이는 점이 아니라 스피너, 사람을 기다리면 경고, 턴이 끝났으면 체크다.
+	describe("status glyph", () => {
+		const at = "2026-06-30T00:00:00Z";
+
+		it("shows a blue spinner while the agent works, whatever the PR says", () => {
+			for (const scmStatus of [undefined, "pr_open", "mergeable", "merged"] as const) {
+				expect(
+					getSessionStatusGlyphView(
+						sessionWith({ status: "working", scmStatus, activity: { state: "active", lastActivityAt: at } }),
+					),
+				).toEqual({ glyph: "working", className: "text-status-working" });
+			}
+		});
+
+		it.each(["waiting_input", "blocked"] as const)(
+			"shows the needs-you mark for %s even when a merged PR owns the tone",
+			(state) => {
+				// 점이었을 때는 병합 보라가 이겨서 사람을 기다리는 세션이 아무 신호도 내지 않았다.
+				expect(
+					getSessionStatusGlyphView(
+						sessionWith({ status: "needs_input", scmStatus: "merged", activity: { state, lastActivityAt: at } }),
+					),
+				).toEqual({ glyph: "needs_you", className: "text-status-needs-you" });
+			},
+		);
+
+		it.each([
+			["idle", undefined, "text-status-idle"],
+			["draft", "draft", "text-status-in-review"],
+			["mergeable", "mergeable", "text-status-ready"],
+			["merged", "merged", "text-status-merged"],
+			["ci_failed", "ci_failed", "text-status-needs-you"],
+		] as const)("checks off a finished %s turn in the dot's board-section tone", (status, scmStatus, className) => {
+			expect(
+				getSessionStatusGlyphView(sessionWith({ status, scmStatus, activity: { state: "idle", lastActivityAt: at } })),
+			).toEqual({ glyph: "done", className });
+		});
+
+		it("does not check off a silent no_signal session", () => {
+			// 데몬은 신호 없이 유예(90초)가 지난 세션을 no_signal 로 낮추고 activity 는 idle 로 둔다 —
+			// «확신 있는 idle» 을 말하지 않으려는 상태라 «끝남» 체크도 그리지 않고 예전 점으로 둔다.
+			expect(
+				getSessionStatusGlyphView(
+					sessionWith({ status: "no_signal", activity: { state: "idle", lastActivityAt: at } }),
+				),
+			).toEqual({ glyph: "dot", className: "bg-status-needs-you" });
+		});
+
+		it("keeps the dot when there is no live activity to show", () => {
+			expect(getSessionStatusGlyphView(sessionWith({ status: "idle" }))).toEqual({
+				glyph: "dot",
+				className: "bg-status-idle",
+			});
+			expect(
+				getSessionStatusGlyphView(sessionWith({ status: "exited", activity: { state: "exited", lastActivityAt: at } })),
+			).toEqual({ glyph: "dot", className: "bg-passive" });
+			expect(
+				getSessionStatusGlyphView(
+					sessionWith({ status: "unknown", scmStatus: "pr_open", activity: { state: "unknown", lastActivityAt: at } }),
+				),
+			).toEqual({ glyph: "dot", className: "bg-status-in-review" });
+		});
+
+		it("keeps a closed-without-merge session red", () => {
+			expect(
+				getSessionStatusGlyphView(
+					sessionWith({
+						status: "idle",
+						displayStatus: "Closed without merge",
+						activity: { state: "idle", lastActivityAt: at },
+					}),
+				),
+			).toEqual({ glyph: "done", className: "text-status-exited" });
+		});
 	});
 
 	it("paints a closed-without-merge session red", () => {

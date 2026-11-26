@@ -2642,7 +2642,7 @@ describe("Sidebar", () => {
 		expect(window.localStorage.getItem("ao-sidebar-w")).toBe(String(SIDEBAR_MIN_WIDTH + 5));
 	});
 
-	it("paints the dot from its board section while activity drives the pulse", () => {
+	it("swaps the dot for a spinner while the agent works, whatever the board section", () => {
 		renderSidebar({
 			workspaces: [
 				{
@@ -2702,25 +2702,52 @@ describe("Sidebar", () => {
 				},
 			],
 		});
-		const sessionDot = (title: string) =>
-			screen.getByLabelText(`Open ${title}`).querySelector<HTMLElement>("[data-session-status]");
+		const statusMark = (title: string) =>
+			screen.getByLabelText(`Open ${title}`).querySelector<Element>("[data-session-status]");
 
-		// No pull request: the dot falls back to runtime status.
-		expect(sessionDot("idle task")).toHaveClass("bg-status-idle");
-		expect(sessionDot("idle task")).not.toHaveClass("animate-status-pulse");
+		// No pull request and a finished turn: a muted check, never a moving mark.
+		expect(statusMark("idle task")).toHaveAttribute("data-status-glyph", "done");
+		expect(statusMark("idle task")).toHaveClass("text-status-idle");
+		expect(statusMark("idle task")).not.toHaveClass("animate-spin");
 
-		const workingDot = sessionDot("working task");
-		expect(workingDot).toHaveClass("bg-status-working");
-		expect(workingDot).toHaveClass("animate-status-pulse");
-
-		// The board-section tone stays visible while the pulse says the agent is busy.
-		expect(sessionDot("ci failed task")).toHaveClass("bg-status-needs-you", "animate-status-pulse");
-		expect(sessionDot("review task")).toHaveClass("bg-status-in-review", "animate-status-pulse");
-		expect(sessionDot("ready task")).toHaveClass("bg-status-ready", "animate-status-pulse");
-		expect(sessionDot("merged task")).toHaveClass("bg-status-merged", "animate-status-pulse");
+		// LADO fork: 작업 중은 깜빡이는 점이 아니라 파란 스피너가 점 자리를 차지한다 — PR 이 있어도 같다.
+		for (const title of ["working task", "ci failed task", "review task", "ready task", "merged task"]) {
+			const mark = statusMark(title);
+			expect(mark).toHaveAttribute("data-status-glyph", "working");
+			expect(mark).toHaveClass("text-status-working", "animate-spin");
+			expect(mark).not.toHaveClass("animate-status-pulse");
+		}
 	});
 
-	it("blinks blue when an idle-section session has working activity", () => {
+	it("marks a session waiting on a person even when a merged PR owns the tone", () => {
+		renderSidebar({
+			workspaces: [
+				{
+					...workspace,
+					sessions: [
+						{
+							...session,
+							id: "proj-1-merged-waiting",
+							title: "merged task asking",
+							status: "needs_input",
+							scmStatus: "merged",
+							activity: { state: "waiting_input", lastActivityAt: "2026-06-30T00:00:00Z" },
+							prs: [sidebarPR({ state: "merged" })],
+						},
+					],
+				},
+			],
+		});
+
+		const mark = screen
+			.getByLabelText("Open merged task asking")
+			.querySelector<Element>("[data-session-status]");
+		expect(mark).toHaveAttribute("data-status-glyph", "needs_you");
+		expect(mark).toHaveClass("text-status-needs-you");
+		expect(mark).not.toHaveClass("text-status-merged");
+	});
+
+	it("spins blue when an idle-section session has working activity", () => {
 		renderSidebar({
 			workspaces: [
 				{
@@ -2738,13 +2765,14 @@ describe("Sidebar", () => {
 			],
 		});
 
-		const dot = screen
+		const mark = screen
 			.getByLabelText("Open idle task receiving work")
-			.querySelector<HTMLElement>("[data-session-status]");
-		expect(dot).toHaveClass("bg-status-working", "animate-status-pulse");
+			.querySelector<Element>("[data-session-status]");
+		expect(mark).toHaveAttribute("data-status-glyph", "working");
+		expect(mark).toHaveClass("text-status-working", "animate-spin");
 	});
 
-	it("holds the dot still for idle activity and keeps its PR tone", async () => {
+	it("checks off a finished turn in the dot's PR tone, without motion", async () => {
 		renderSidebar({
 			workspaces: [
 				{
@@ -2772,17 +2800,21 @@ describe("Sidebar", () => {
 		});
 
 
-		const idleActivityDot = screen
+		const idleActivityMark = screen
 			.getByLabelText("Open idle activity task")
-			.querySelector<HTMLElement>("span.rounded-full");
-		const idleDraftDot = screen.getByLabelText("Open idle draft task").querySelector<HTMLElement>("span.rounded-full");
+			.querySelector<Element>("[data-session-status]");
+		const idleDraftMark = screen.getByLabelText("Open idle draft task").querySelector<Element>("[data-session-status]");
 
-		// An idle session with no pull request stays gray; a parked draft keeps
-		// the in-review tone the board gives it, without any motion.
-		expect(idleActivityDot).toHaveClass("bg-status-idle");
-		expect(idleDraftDot).toHaveClass("bg-status-in-review");
-		expect(idleActivityDot).not.toHaveClass("animate-status-pulse");
-		expect(idleDraftDot).not.toHaveClass("animate-status-pulse");
+		// An idle session with no pull request gets a gray check; a parked draft
+		// keeps the in-review tone the board gives it, without any motion.
+		expect(idleActivityMark).toHaveAttribute("data-status-glyph", "done");
+		expect(idleDraftMark).toHaveAttribute("data-status-glyph", "done");
+		expect(idleActivityMark).toHaveClass("text-status-idle");
+		expect(idleDraftMark).toHaveClass("text-status-in-review");
+		for (const mark of [idleActivityMark, idleDraftMark]) {
+			expect(mark).not.toHaveClass("animate-spin");
+			expect(mark).not.toHaveClass("animate-status-pulse");
+		}
 	});
 
 	it("keeps a stopped agent dot neutral while showing switch progress separately", () => {
@@ -2802,6 +2834,7 @@ describe("Sidebar", () => {
 		expect(row).toHaveAccessibleDescription("Switching to Codex");
 		expect(within(row).getByText("Switching to Codex")).toBeInTheDocument();
 		const dot = row.querySelector<HTMLElement>("[data-session-status]");
+		expect(dot).toHaveAttribute("data-status-glyph", "dot");
 		expect(dot).toHaveClass("bg-passive");
 		expect(dot).not.toHaveClass("animate-status-pulse");
 	});
