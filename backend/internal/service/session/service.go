@@ -636,6 +636,11 @@ func (s *Service) SpawnOrchestrator(
 		if len(existing) > 0 {
 			return newestSession(existing), nil
 		}
+		if mode == "" && approval == "" {
+			if sess, handled, err := s.restoreOrchestratorWhoseRuntimeDied(ctx, project); handled {
+				return sess, err
+			}
+		}
 	}
 	sess, _, _, err := s.spawn(ctx, ports.SpawnConfig{
 		ProjectID:     projectID,
@@ -653,6 +658,65 @@ func (s *Service) SpawnOrchestrator(
 		return domain.Session{}, err
 	}
 	return sess, nil
+}
+
+// runtimeDeathReporter 는 런타임이 죽어 끝난 세션을 아는 commander 다. 가짜
+// commander 는 몰라도 되게 선택 인터페이스로 둔다.
+type runtimeDeathReporter interface {
+	TerminatedByRuntimeDeath(id domain.SessionID) bool
+}
+
+// restoreOrchestratorWhoseRuntimeDied 는 프로젝트의 가장 최근 오케스트레이터가
+// 사람이 끝내지 않았는데 런타임이 죽어(재부팅 등) 끝났으면 그것을 복원한다.
+// 새로 만들면 모드 없는 오케스트레이터는 Chat 으로 뜨고 예전 대화가 끊기기
+// 때문이다. handled 가 false 면 부르는 쪽이 지금처럼 새로 만든다. 복원한
+// 오케스트레이터가 살아 있으면 오류가 나도 handled 는 true 다: 새로 만들면
+// 오케스트레이터가 둘이 된다.
+func (s *Service) restoreOrchestratorWhoseRuntimeDied(ctx context.Context, project domain.ProjectRecord) (domain.Session, bool, error) {
+	reporter, ok := s.manager.(runtimeDeathReporter)
+	if !ok {
+		return domain.Session{}, false, nil
+	}
+	recs, err := s.listRecords(ctx, domain.ProjectID(project.ID))
+	if err != nil {
+		s.warn("list orchestrators to restore", "project", project.ID, "err", err)
+		return domain.Session{}, false, nil
+	}
+	var newest domain.SessionRecord
+	for _, rec := range recs {
+		if matchesSessionFilter(rec, ListFilter{ProjectID: domain.ProjectID(project.ID), OrchestratorOnly: true}) &&
+			(newest.ID == "" || sessionNewer(rec, newest)) {
+			newest = rec
+		}
+	}
+	if newest.ID == "" || !newest.IsTerminated || !reporter.TerminatedByRuntimeDeath(newest.ID) {
+		return domain.Session{}, false, nil
+	}
+	if expected := project.Config.Orchestrator.Harness; expected != "" && newest.Harness != expected {
+		// 죽은 뒤 프로젝트의 에이전트를 바꿨으면 새 설정으로 새로 만든다.
+		return domain.Session{}, false, nil
+	}
+	res, err := s.manager.RestoreWithMode(ctx, newest.ID)
+	if err != nil {
+		rec, found, getErr := s.store.GetSession(ctx, newest.ID)
+		if getErr != nil || !found || rec.IsTerminated {
+			s.warn("restore the orchestrator whose runtime died; spawning a new one", "session", newest.ID, "err", err)
+			return domain.Session{}, false, nil
+		}
+		// 복원은 됐는데 그 뒤 읽기에서 실패했다.
+		res.Session = rec
+	}
+	sess, err := s.toSession(ctx, res.Session)
+	if err != nil {
+		return domain.Session{}, true, err
+	}
+	return sess, true, nil
+}
+
+func (s *Service) warn(msg string, args ...any) {
+	if s.logger != nil {
+		s.logger.Warn(msg, args...)
+	}
 }
 
 func (s *Service) activeOrchestrators(ctx context.Context, projectID domain.ProjectID) ([]domain.Session, error) {
