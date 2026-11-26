@@ -700,8 +700,9 @@ func (s *Service) restoreOrchestratorWhoseRuntimeDied(ctx context.Context, proje
 	if err != nil {
 		rec, found, getErr := s.store.GetSession(ctx, newest.ID)
 		if getErr != nil || !found || rec.IsTerminated {
-			s.warn("restore the orchestrator whose runtime died; spawning a new one", "session", newest.ID, "err", err)
-			return domain.Session{}, false, nil
+			s.warn("restore the orchestrator whose runtime died; spawning a new one",
+				"session", newest.ID, "err", err, "reread_err", getErr)
+			return domain.Session{}, false, nil //nolint:nilerr // 복원 실패는 오류로 돌려주지 않고 새로 만드는 길로 넘긴다
 		}
 		// 복원은 됐는데 그 뒤 읽기에서 실패했다.
 		res.Session = rec
