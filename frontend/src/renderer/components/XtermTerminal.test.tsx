@@ -2873,15 +2873,16 @@ describe("XtermTerminal", () => {
 		expect(onInput).toHaveBeenLastCalledWith("\x1b[5~", "wheel");
 	});
 
+	// LADO fork (TDD §11): 내장 패널은 Alt·Cmd 클릭으로 연다.
 	it("routes web links to the AO browser and does not open the system browser", () => {
 		const open = vi.spyOn(window, "open").mockReturnValue(null);
 		const onLinkOpen = vi.fn();
 		render(<XtermTerminal onLinkOpen={onLinkOpen} theme="dark" />);
 
-		// A left-click on an http(s) link is reported to the parent (which shows it
+		// An Alt-click on an http(s) link is reported to the parent (which shows it
 		// in the AO Browser panel); it must NOT spawn a system-browser window.
 		expect(state.linkHandler).toBeTypeOf("function");
-		state.linkHandler!({} as MouseEvent, "https://example.com");
+		state.linkHandler!({ altKey: true } as MouseEvent, "https://example.com");
 
 		expect(onLinkOpen).toHaveBeenCalledWith("https://example.com");
 		expect(open).not.toHaveBeenCalled();
@@ -2896,7 +2897,7 @@ describe("XtermTerminal", () => {
 			activate: (event: MouseEvent, uri: string) => void;
 		};
 
-		oscLinkHandler.activate({} as MouseEvent, "http://localhost:3000");
+		oscLinkHandler.activate({ altKey: true } as MouseEvent, "http://localhost:3000");
 
 		expect(onLinkOpen).toHaveBeenCalledWith("http://localhost:3000");
 		expect(open).not.toHaveBeenCalled();
@@ -3020,12 +3021,11 @@ describe("XtermTerminal", () => {
 		});
 	});
 
+	// LADO fork (TDD §11): 그냥 클릭한 웹 링크는 시스템 브라우저로 연다.
 	it.each([
-		["plain", "Option/Alt", { altKey: true }],
-		["OSC 8", "Option/Alt", { altKey: true }],
-		["plain", "Command", { metaKey: true }],
-		["OSC 8", "Command", { metaKey: true }],
-	])("opens %s web links in the system browser on %s+Click", (kind, _modifier, event) => {
+		["plain", "a plain", {}],
+		["OSC 8", "a plain", {}],
+	])("opens %s web links in the system browser on %s click", (kind, _modifier, event) => {
 		const openExternal = vi.fn().mockResolvedValue(undefined);
 		window.ao!.app.openExternal = openExternal;
 		const onLinkOpen = vi.fn();
@@ -3033,6 +3033,59 @@ describe("XtermTerminal", () => {
 		const oscHandler = state.lastTerminal!.options.linkHandler as { activate: (event: MouseEvent, uri: string) => void };
 		const handler = kind === "plain" ? state.linkHandler! : oscHandler.activate;
 		handler(event as unknown as MouseEvent, "https://example.com");
+		expect(openExternal).toHaveBeenCalledWith("https://example.com");
+		expect(onLinkOpen).not.toHaveBeenCalled();
+	});
+
+	// LADO fork (TDD §11): Alt·Cmd 클릭은 내장 패널로 연다.
+	it.each([
+		["plain", { altKey: true }],
+		["OSC 8", { altKey: true }],
+		["plain", { metaKey: true }],
+		["OSC 8", { metaKey: true }],
+	])("opens %s web links in the AO browser on a modifier click: %j", (kind, event) => {
+		const openExternal = vi.fn().mockResolvedValue(undefined);
+		window.ao!.app.openExternal = openExternal;
+		const onLinkOpen = vi.fn();
+		render(<XtermTerminal onLinkOpen={onLinkOpen} theme="dark" />);
+		const oscHandler = state.lastTerminal!.options.linkHandler as { activate: (event: MouseEvent, uri: string) => void };
+		const handler = kind === "plain" ? state.linkHandler! : oscHandler.activate;
+		handler(event as unknown as MouseEvent, "https://example.com");
+		expect(onLinkOpen).toHaveBeenCalledWith("https://example.com");
+		expect(openExternal).not.toHaveBeenCalled();
+	});
+
+	// LADO fork (TDD §11): 패널 처리기가 없으면 수정키 클릭도 시스템 브라우저로 연다.
+	it("opens web links in the system browser when no AO browser handler is given", () => {
+		const openExternal = vi.fn().mockResolvedValue(undefined);
+		window.ao!.app.openExternal = openExternal;
+		render(<XtermTerminal theme="dark" />);
+		state.linkHandler!({} as MouseEvent, "https://example.com/a");
+		state.linkHandler!({ altKey: true } as MouseEvent, "https://example.com/b");
+		expect(openExternal.mock.calls).toEqual([["https://example.com/a"], ["https://example.com/b"]]);
+	});
+
+	// LADO fork (TDD §11): 원격 호스트의 localhost 링크는 이 컴퓨터의 브라우저로 열지 않고
+	// 그 호스트의 미리보기(패널 처리기)로 보낸다.
+	it.each(["http://localhost:3000", "http://127.0.0.1:5173/app", "http://0.0.0.0:8080"])("keeps a remote host's local link %s off this computer's browser", (uri) => {
+		const openExternal = vi.fn().mockResolvedValue(undefined);
+		window.ao!.app.openExternal = openExternal;
+		const onLinkOpen = vi.fn();
+		const { unmount } = render(<XtermTerminal onLinkOpen={onLinkOpen} ladoRemoteHost theme="dark" />);
+		state.linkHandler!({} as MouseEvent, uri);
+		expect(onLinkOpen).toHaveBeenCalledWith(uri);
+		unmount();
+		render(<XtermTerminal ladoRemoteHost theme="dark" />);
+		state.linkHandler!({} as MouseEvent, uri);
+		expect(openExternal).not.toHaveBeenCalled();
+	});
+
+	it("still opens a remote host's public web link in the system browser", () => {
+		const openExternal = vi.fn().mockResolvedValue(undefined);
+		window.ao!.app.openExternal = openExternal;
+		const onLinkOpen = vi.fn();
+		render(<XtermTerminal onLinkOpen={onLinkOpen} ladoRemoteHost theme="dark" />);
+		state.linkHandler!({} as MouseEvent, "https://example.com");
 		expect(openExternal).toHaveBeenCalledWith("https://example.com");
 		expect(onLinkOpen).not.toHaveBeenCalled();
 	});

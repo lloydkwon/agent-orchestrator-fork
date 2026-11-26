@@ -3,6 +3,7 @@ import { Copy, ExternalLink, FileText, Globe } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { aoBridge } from "../lib/bridge";
 import { isWebLink, openLinkInSystemBrowser } from "../lib/external-link-policy";
+import { ladoWebLinkClickOpensAOBrowser } from "../lib/lado-link-click";
 import { useLinkPreview } from "../hooks/useLinkPreview";
 import { LinkPreviewCard, LinkPreviewCardLoading } from "./LinkPreviewCard";
 import {
@@ -40,7 +41,8 @@ export function AppLink({ href, onClick, onBrowserOpen, inAppLink, filePath, onF
 				onClick?.(event);
 				if (event.defaultPrevented || !href || !browserLink) return;
 				event.preventDefault();
-				if (openBrowser && (!webLink || (!event.ctrlKey && !event.metaKey && !event.altKey))) openBrowser(href);
+				// LADO fork (TDD §11): 그냥 클릭한 웹 링크는 시스템 브라우저로 연다.
+				if (openBrowser && (!webLink || ladoWebLinkClickOpensAOBrowser(event.ctrlKey || event.metaKey || event.altKey))) openBrowser(href);
 				else void openLinkInSystemBrowser(href);
 			}}
 		/>

@@ -36,6 +36,8 @@ import { aoBridge } from "../lib/bridge";
 import { isDialogOrMenuOpenOutside } from "../lib/dom-selectors";
 import { TERMINAL_FONT_SIZE_DEFAULT, TERMINAL_LINE_HEIGHT, TERMINAL_MINIMUM_CONTRAST } from "../lib/design-tokens";
 import { isWebLink, openLinkInSystemBrowser } from "../lib/external-link-policy";
+import { ladoWebLinkClickOpensAOBrowser } from "../lib/lado-link-click";
+import { isHostLocalWebLink } from "../lib/loopback";
 import { findSessionLinks } from "../lib/session-links";
 import { isMacPlatform } from "../lib/platform";
 import { applyDocumentTheme, applyDocumentThemeStyle } from "../lib/theme";
@@ -90,6 +92,8 @@ export type XtermTerminalProps = {
 	onLinkOpen?: (uri: string) => void;
 	/** Navigate a canonical ao:// session link inside the current AO window. */
 	onSessionLinkOpen?: (uri: string) => void;
+	/** LADO fork (TDD §11): 원격 호스트 세션이다. 그 localhost 링크는 이 컴퓨터의 브라우저로 열지 않는다. */
+	ladoRemoteHost?: boolean;
 	/** Publish the positive grid after a retained terminal becomes visible. */
 	onVisibleSize?: (cols: number, rows: number) => void;
 	/** Hidden retained terminals keep parsing output but expose no UI overlays. */
@@ -678,12 +682,14 @@ export function XtermTerminal(props: XtermTerminalProps) {
 			// via the main process's window-open handler. Right-click to open a web
 			// link in the system browser instead — see the context menu below. Cmd-click
 			// follows the same escape hatch as links in the Chat surface.
+			// LADO fork (TDD §11): 반대로, 그냥 클릭은 시스템 브라우저이고 Alt·Cmd 클릭이
+			// 내장 패널이다. 오른쪽 클릭 메뉴의 «브라우저에서 열기»도 내장 패널로 연다.
+			// 원격 호스트의 localhost 링크는 이 컴퓨터에서 열지 않고 그 호스트의 미리보기로 보낸다.
 			if (isWebLink(uri)) {
-				if (event.altKey || event.metaKey) {
-					void openLinkInSystemBrowser(uri);
-					return;
-				}
-				callbacksRef.current.onLinkOpen?.(uri);
+				const openInAOBrowser = callbacksRef.current.onLinkOpen;
+				const hostLocalOnRemote = Boolean(callbacksRef.current.ladoRemoteHost) && isHostLocalWebLink(uri);
+				if (openInAOBrowser && ladoWebLinkClickOpensAOBrowser(event.altKey || event.metaKey, hostLocalOnRemote)) openInAOBrowser(uri);
+				else if (!hostLocalOnRemote) void openLinkInSystemBrowser(uri);
 				return;
 			}
 			window.open(uri, "_blank", "noopener");
@@ -2128,7 +2134,8 @@ export function XtermTerminal(props: XtermTerminalProps) {
 						onPointerLeave={() => linkPreviewControlsRef.current.hide()}
 					>
 						{linkPreviewQuery.data ? (
-							<LinkPreviewCard url={linkPreview.url} preview={linkPreviewQuery.data} onBrowserOpen={props.onLinkOpen} />
+							<LinkPreviewCard url={linkPreview.url} preview={linkPreviewQuery.data} onBrowserOpen={props.onLinkOpen}
+								ladoHostLocalOnRemoteHost={Boolean(props.ladoRemoteHost) && isHostLocalWebLink(linkPreview.url)} />
 						) : (
 							<LinkPreviewCardLoading />
 						)}

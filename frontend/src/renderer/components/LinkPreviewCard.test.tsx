@@ -29,15 +29,18 @@ describe("AppLink link preview", () => {
 		fireEvent.pointerOver(screen.getByRole("link", { name: "docs" }), { pointerType: "mouse" });
 		const title = await screen.findByRole("link", { name: "Clickable title" });
 		expect(title).toHaveAttribute("href", originalUrl);
-		fireEvent.click(title);
-		fireEvent.click(screen.getByRole("link", { name: "redirect.example.com" }));
+		// LADO fork (TDD §11): 내장 패널은 수정키 클릭으로 연다.
+		fireEvent.click(title, { altKey: true });
+		fireEvent.click(screen.getByRole("link", { name: "redirect.example.com" }), { altKey: true });
 		expect(open.mock.calls).toEqual([[originalUrl], [originalUrl]]);
 	});
 
-	it.each([{}, { ctrlKey: true }, { metaKey: true }, { altKey: true }])("opens externally when no browser is available or modifiers are used: %j", (modifiers) => {
+	// LADO fork (TDD §11): 그냥 클릭은 브라우저 패널이 있어도 시스템 브라우저로, 수정키
+	// 클릭은 패널이 없을 때만 시스템 브라우저로 연다.
+	it.each([{}, { ctrlKey: true }, { metaKey: true }, { altKey: true }])("opens externally on a plain click or when no browser is available: %j", (modifiers) => {
 		const open = vi.fn();
 		const external = vi.spyOn(aoBridge.app, "openExternal").mockResolvedValue(undefined);
-		render(<LinkPreviewCard url={url} preview={{ url, title: "Open page" }} onBrowserOpen={Object.keys(modifiers).length ? open : undefined} />);
+		render(<LinkPreviewCard url={url} preview={{ url, title: "Open page" }} onBrowserOpen={Object.keys(modifiers).length ? undefined : open} />);
 		fireEvent.click(screen.getByRole("link", { name: "Open page" }), modifiers);
 		expect(external).toHaveBeenCalledExactlyOnceWith(url);
 		expect(open).not.toHaveBeenCalled();
@@ -46,7 +49,7 @@ describe("AppLink link preview", () => {
 	it("keeps the domain clickable when the preview has no title", () => {
 		const open = vi.fn();
 		render(<LinkPreviewCard url={url} preview={{ url }} onBrowserOpen={open} />);
-		fireEvent.click(screen.getByRole("link", { name: "example.com" }));
+		fireEvent.click(screen.getByRole("link", { name: "example.com" }), { altKey: true });
 		expect(open).toHaveBeenCalledExactlyOnceWith(url);
 	});
 

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Globe } from "lucide-react";
 import { cn } from "../lib/utils";
 import { openLinkInSystemBrowser } from "../lib/external-link-policy";
+import { ladoWebLinkClickOpensAOBrowser } from "../lib/lado-link-click";
 import type { LinkPreview } from "../hooks/useLinkPreview";
 import { Skeleton } from "./ui/skeleton";
 
@@ -42,10 +43,12 @@ export function LinkPreviewCardLoading() {
 	);
 }
 
-export function LinkPreviewCard({ url, preview, onBrowserOpen }: {
+export function LinkPreviewCard({ url, preview, onBrowserOpen, ladoHostLocalOnRemoteHost }: {
 	url: string;
 	preview: LinkPreview;
 	onBrowserOpen?: (url: string) => void;
+	/** LADO fork (TDD §11): 원격 호스트의 localhost 링크라 이 컴퓨터의 브라우저로 열지 않는다. */
+	ladoHostLocalOnRemoteHost?: boolean;
 }) {
 	const domain = linkDomain(preview.url || url);
 	const siteLabel = preview.siteName || domain;
@@ -53,8 +56,10 @@ export function LinkPreviewCard({ url, preview, onBrowserOpen }: {
 		href: url,
 		onClick: (event: React.MouseEvent<HTMLAnchorElement>) => {
 			event.preventDefault();
-			if (onBrowserOpen && !event.ctrlKey && !event.metaKey && !event.altKey) onBrowserOpen(url);
-			else void openLinkInSystemBrowser(url);
+			// LADO fork (TDD §11): 그냥 클릭은 시스템 브라우저로 연다.
+			const hostLocalOnRemote = Boolean(ladoHostLocalOnRemoteHost);
+			if (onBrowserOpen && ladoWebLinkClickOpensAOBrowser(event.ctrlKey || event.metaKey || event.altKey, hostLocalOnRemote)) onBrowserOpen(url);
+			else if (!hostLocalOnRemote) void openLinkInSystemBrowser(url);
 		},
 	};
 	return (
