@@ -445,6 +445,11 @@ func (c *Controller) restoreLiveTurnOwnership(turns []domain.ConversationTurn) s
 		if turn.State != domain.TurnStateRunning || turn.ProviderTurnID == "" || turn.RolledBackAt != nil {
 			continue
 		}
+		// 자율 턴은 AO 가 보낸 턴이 아니라 Busy 를 세우지 않는다. 다시 붙을 때 남은 running 자율 행은
+		// service 가 recovered 로 닫는다.
+		if ports.IsProviderInitiatedTurn(turn.ProviderTurnID) {
+			continue
+		}
 		if latest == nil || turn.RequestedAt.After(latest.RequestedAt) {
 			latest = turn
 		}
@@ -2978,6 +2983,10 @@ func (c *Controller) applyCommittedTurnLifecycle(event ports.ChatEvent) bool {
 	if event.ProviderConversationID != "" && event.ProviderConversationID != c.conv.ProviderConversationID() {
 		return false
 	}
+	// 자율 턴은 primary 턴을 잡지도 풀지도 않는다(controller_provider_turn.go).
+	if ports.IsProviderInitiatedTurn(event.ProviderTurnID) {
+		return false
+	}
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -3025,7 +3034,9 @@ func (c *Controller) apply(ctx context.Context, event ports.ChatEvent) error {
 		c.mu.Unlock()
 		if event.ProviderTurnID != "" {
 			rootConversation := event.ProviderConversationID == "" || event.ProviderConversationID == c.conv.ProviderConversationID()
-			if dispatchingTurnID != "" && rootConversation {
+			// dispatch 중에 온 자율 턴은 그 사용자 턴의 이른 시작이 아니다. 묶지 않고 자기 행으로 adopt 한다.
+			providerInitiated := ports.IsProviderInitiatedTurn(event.ProviderTurnID)
+			if dispatchingTurnID != "" && rootConversation && !providerInitiated {
 				if err := c.store.BindTurnToProvider(ctx, dispatchingTurnID, event.ProviderTurnID, now); err != nil {
 					return fmt.Errorf("bind early provider-started turn %s: %w", event.ProviderTurnID, err)
 				}
@@ -3427,6 +3438,10 @@ func (c *Controller) apply(ctx context.Context, event ports.ChatEvent) error {
 // would hold the single writer connection across another subsystem.
 func (c *Controller) afterProject(ctx context.Context, event ports.ChatEvent, primaryTurn bool) {
 	now := c.now()
+	if isProviderInitiatedTurnEvent(event) {
+		c.afterProviderInitiatedTurn(ctx, event, now)
+		return
+	}
 	switch event.Kind {
 	case ports.ChatEventTurnStarted:
 		if primaryTurn {
