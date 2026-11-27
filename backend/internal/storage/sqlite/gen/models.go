@@ -550,6 +550,7 @@ type LadoDispatchSetting struct {
 	MaxWorkers             int64
 	HoldOnDiskLow          int64
 	MinFreeDiskGb          int64
+	RestoreOnStart         int64
 }
 
 type LadoEvidenceLink struct {

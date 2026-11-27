@@ -180,11 +180,13 @@ func (o LadoWatchOverrides) applyValid(s LadoWatchSettings) LadoWatchSettings {
 	return s
 }
 
-// The only two messages LADO sends a worker (plan decision 8). It never
-// sends free text.
+// The only three messages LADO sends a worker (plan decision 8). It never
+// sends free text. The restart message goes to a worker the daemon started
+// again at its start, whose turn the reboot cut off.
 const (
-	LadoWakeLimitResumeText = "사용 한도가 풀렸습니다. 멈춘 곳부터 이어서 진행하세요."
-	LadoWakeStallNudgeText  = "지금 상태를 보고하거나 이어서 진행하세요."
+	LadoWakeLimitResumeText   = "사용 한도가 풀렸습니다. 멈춘 곳부터 이어서 진행하세요."
+	LadoWakeStallNudgeText    = "지금 상태를 보고하거나 이어서 진행하세요."
+	LadoWakeRestartResumeText = "컴퓨터가 다시 시작되어 작업이 끊겼습니다. 실행 중이던 백그라운드 명령은 끝났을 수 있으니 상태를 확인하고 멈춘 곳부터 이어서 진행하세요."
 )
 
 // Wake limits.
@@ -199,6 +201,10 @@ const (
 	// LadoLimitGuessedReset is when LADO takes a limit to reset when it could
 	// not read the time from the limit message.
 	LadoLimitGuessedReset = 60 * time.Minute
+	// LadoWakeRestartWindow is how long after the daemon started a worker
+	// again LADO still sends it the restart message; past it the stall watch
+	// takes over.
+	LadoWakeRestartWindow = 30 * time.Minute
 )
 
 // Waiting reasons a queue entry, a part and a plan request share while LADO
@@ -508,13 +514,16 @@ const (
 	// an execution's PR (LadoResolveNeedsHuman). Its session is the
 	// execution's, Value the failed attempts in a row.
 	LadoAlertConflictUnresolved LadoAlertKind = "conflict_unresolved"
+	// LadoAlertRestartResumed: the daemon started a worker again at its start
+	// and LADO sent it the restart message, once a session.
+	LadoAlertRestartResumed LadoAlertKind = "restart_resumed"
 )
 
 // LadoAlertKinds lists the alert kinds.
 var LadoAlertKinds = []LadoAlertKind{
 	LadoAlertTaskCost, LadoAlertSessionCost, LadoAlertSessionCompactions, LadoAlertLimited,
 	LadoAlertLimitResumed, LadoAlertStallNudged, LadoAlertStalled, LadoAlertAgentUnavailable,
-	LadoAlertConflictUnresolved,
+	LadoAlertConflictUnresolved, LadoAlertRestartResumed,
 }
 
 // Valid reports whether k is a known kind.
@@ -570,6 +579,7 @@ const (
 	ladoAlertStalled            = "#%d 세션 %s 가 %d분 넘게 멈춤"
 	ladoAlertAgentUnavailable   = "#%d 에이전트 실행 파일을 쓸 수 없어 워커를 기다리게 함"
 	ladoAlertConflictUnresolved = "#%d 실행 %s 의 PR 충돌을 LADO가 풀지 못함 — 직접 해결하세요"
+	ladoAlertRestartResumed     = "#%d 세션 %s 를 재시작 뒤 다시 띄우고 이어서 진행하라는 문구를 보냄"
 	ladoAlertUnknown            = "#%d 세션 %s 알림 %s"
 )
 
@@ -603,6 +613,8 @@ func (a LadoAlert) Line(issue int) string {
 		return ladoNoticeLine(ladoAlertAgentUnavailable, issue)
 	case LadoAlertConflictUnresolved:
 		return ladoNoticeLine(ladoAlertConflictUnresolved, issue, session)
+	case LadoAlertRestartResumed:
+		return ladoNoticeLine(ladoAlertRestartResumed, issue, session)
 	}
 	return ladoNoticeLine(ladoAlertUnknown, issue, session, a.Kind)
 }

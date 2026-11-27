@@ -481,6 +481,9 @@ type Manager struct {
 	// lado_launch_env.go.
 	ladoLaunchValues LadoLaunchValues
 	ladoReadDirs     LadoReadDirectories
+	// LADO fork: sessions a reboot stopped start again, see
+	// lado_startup_restore.go.
+	ladoStartupRestore LadoStartupRestore
 	// lookPath is exec.LookPath in production; tests substitute a stub so
 	// they don't need real binaries on PATH. Returns ports.ErrAgentBinaryNotFound
 	// when the binary is missing so the sentinel propagates through toAPIError.

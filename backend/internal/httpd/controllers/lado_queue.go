@@ -193,6 +193,10 @@ func (c *LadoController) putDispatchSettings(w http.ResponseWriter, r *http.Requ
 			change.MinFreeDiskGB = *req.MinFreeDiskGB
 		}
 	}
+	// The service keeps the restore setting when the change leaves it out.
+	if req.RestoreOnStart != nil {
+		change.RestoreOnStart = domain.LadoRestoreOnStartOf(*req.RestoreOnStart)
+	}
 	settings, err := c.Queue.SetSettings(r.Context(), change)
 	if err != nil {
 		envelope.WriteError(w, r, err)
@@ -410,9 +414,10 @@ func ladoDispatchSettingsResponse(settings domain.LadoDispatchSettings) LadoDisp
 		PlanReview: LadoPlanReviewSettingsDTO{
 			Skip: settings.PlanReview.Skip, MaxPaths: settings.PlanReview.MaxPaths, Patterns: patterns,
 		},
-		MaxWorkers:    settings.MaxWorkers,
-		HoldOnDiskLow: settings.HoldOnDiskLow,
-		MinFreeDiskGB: settings.MinFreeDiskGB,
-		UpdatedAt:     ladoOptionalTime(settings.UpdatedAt),
+		MaxWorkers:     settings.MaxWorkers,
+		HoldOnDiskLow:  settings.HoldOnDiskLow,
+		MinFreeDiskGB:  settings.MinFreeDiskGB,
+		RestoreOnStart: settings.RestoreOnStart.On(),
+		UpdatedAt:      ladoOptionalTime(settings.UpdatedAt),
 	}
 }

@@ -101,6 +101,7 @@ export function LadoPlanReviewPatternsDialog({
 				maxWorkers: settings.maxWorkers,
 				holdOnDiskLow: settings.holdOnDiskLow,
 				minFreeDiskGb: settings.minFreeDiskGb,
+				restoreOnStart: settings.restoreOnStart,
 			},
 			{ onSuccess: close },
 		);

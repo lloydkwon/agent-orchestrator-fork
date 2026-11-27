@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/aoagents/agent-orchestrator/backend/internal/domain"
@@ -255,6 +256,8 @@ type Manager struct {
 	projects         projectConfigLoader
 	operationGateMu  sync.RWMutex
 	operationGate    sessionOperationGate
+	// LADO fork: see lado_startup_hold.go.
+	ladoRuntimeDeathHold atomic.Pointer[func() bool]
 	// dataDir backs ReconcileSessionOutputType's artifact-dir fallback for
 	// sessions rows created before session_output_type/artifact_dir existed.
 	dataDir string
@@ -506,6 +509,11 @@ func (m *Manager) ApplyRuntimeObservation(ctx context.Context, id domain.Session
 			return cur, false
 		}
 		if !runtimeClearlyDead(f, cur.Activity, now, m.window) {
+			return cur, false
+		}
+		// LADO fork: the startup restore may yet start this agent again
+		// (lado_startup_hold.go).
+		if m.ladoHoldsRuntimeDeath() {
 			return cur, false
 		}
 		if m.sessionMutationInProgress(id) {

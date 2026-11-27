@@ -206,7 +206,7 @@ func (q *Queries) FailLadoQueueEntry(ctx context.Context, arg FailLadoQueueEntry
 const getLadoDispatchSettings = `-- name: GetLadoDispatchSettings :one
 SELECT id, max_concurrent, max_run_minutes, hold_on_memory_tight, updated_at,
     max_plan_workers, plan_review_skip, plan_review_skip_max_paths, plan_review_patterns,
-    max_workers, hold_on_disk_low, min_free_disk_gb
+    max_workers, hold_on_disk_low, min_free_disk_gb, restore_on_start
 FROM lado_dispatch_settings
 WHERE id = 1
 `
@@ -227,6 +227,7 @@ func (q *Queries) GetLadoDispatchSettings(ctx context.Context) (LadoDispatchSett
 		&i.MaxWorkers,
 		&i.HoldOnDiskLow,
 		&i.MinFreeDiskGb,
+		&i.RestoreOnStart,
 	)
 	return i, err
 }
@@ -1203,9 +1204,9 @@ const upsertLadoDispatchSettings = `-- name: UpsertLadoDispatchSettings :exec
 INSERT INTO lado_dispatch_settings (
     id, max_concurrent, max_run_minutes, hold_on_memory_tight, updated_at,
     max_plan_workers, plan_review_skip, plan_review_skip_max_paths, plan_review_patterns,
-    max_workers, hold_on_disk_low, min_free_disk_gb
+    max_workers, hold_on_disk_low, min_free_disk_gb, restore_on_start
 )
-VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT (id) DO UPDATE SET
     max_concurrent = excluded.max_concurrent,
     max_run_minutes = excluded.max_run_minutes,
@@ -1217,7 +1218,8 @@ ON CONFLICT (id) DO UPDATE SET
     plan_review_patterns = excluded.plan_review_patterns,
     max_workers = excluded.max_workers,
     hold_on_disk_low = excluded.hold_on_disk_low,
-    min_free_disk_gb = excluded.min_free_disk_gb
+    min_free_disk_gb = excluded.min_free_disk_gb,
+    restore_on_start = excluded.restore_on_start
 `
 
 type UpsertLadoDispatchSettingsParams struct {
@@ -1232,6 +1234,7 @@ type UpsertLadoDispatchSettingsParams struct {
 	MaxWorkers             int64
 	HoldOnDiskLow          int64
 	MinFreeDiskGb          int64
+	RestoreOnStart         int64
 }
 
 func (q *Queries) UpsertLadoDispatchSettings(ctx context.Context, arg UpsertLadoDispatchSettingsParams) error {
@@ -1247,6 +1250,7 @@ func (q *Queries) UpsertLadoDispatchSettings(ctx context.Context, arg UpsertLado
 		arg.MaxWorkers,
 		arg.HoldOnDiskLow,
 		arg.MinFreeDiskGb,
+		arg.RestoreOnStart,
 	)
 	return err
 }

@@ -509,8 +509,36 @@ type LadoDispatchSettings struct {
 	// space is under MinFreeDiskGB gigabytes.
 	HoldOnDiskLow bool
 	MinFreeDiskGB int
-	UpdatedAt     time.Time
+	// RestoreOnStart says whether the daemon, at its start, starts again the
+	// agent of each session a reboot stopped. Empty in a change keeps the
+	// stored value; a stored setting is always on or off.
+	RestoreOnStart LadoRestoreOnStart
+	UpdatedAt      time.Time
 }
+
+// LadoRestoreOnStart is the setting for the sessions a reboot stopped: at its
+// start the daemon starts their agents again in their own worktrees and
+// conversations (on), or leaves them stopped until a person restores them
+// (off), which is upstream's behavior.
+type LadoRestoreOnStart string
+
+// The two stored values of LadoRestoreOnStart.
+const (
+	LadoRestoreOnStartOn  LadoRestoreOnStart = "on"
+	LadoRestoreOnStartOff LadoRestoreOnStart = "off"
+)
+
+// LadoRestoreOnStartOf is the setting for a switch that is on or off.
+func LadoRestoreOnStartOf(on bool) LadoRestoreOnStart {
+	if on {
+		return LadoRestoreOnStartOn
+	}
+	return LadoRestoreOnStartOff
+}
+
+// On reports whether the daemon starts the stopped agents again. Only an
+// explicit on does: a value the store did not write starts nothing.
+func (r LadoRestoreOnStart) On() bool { return r == LadoRestoreOnStartOn }
 
 // LadoMaxConcurrent is the highest cap on running tasks, overall and per
 // project. The lowest is 1.
@@ -543,11 +571,13 @@ var ErrLadoDispatchSettingsInvalid = errors.New("invalid dispatch settings")
 
 // DefaultLadoDispatchSettings are the settings without a stored row: two
 // executions at once, up to eight hours each, held while memory is tight; two
-// plan requests at once, and no review of a small plan.
+// plan requests at once, and no review of a small plan; the sessions a reboot
+// stopped start again.
 func DefaultLadoDispatchSettings() LadoDispatchSettings {
 	return LadoDispatchSettings{MaxConcurrent: 2, MaxRunMinutes: 480, HoldOnMemoryTight: true,
 		MaxPlanWorkers: LadoDefaultMaxPlanWorkers, PlanReview: DefaultLadoPlanReviewSettings(),
-		MaxWorkers: LadoDefaultMaxWorkers, HoldOnDiskLow: true, MinFreeDiskGB: LadoDefaultMinFreeDiskGB}
+		MaxWorkers: LadoDefaultMaxWorkers, HoldOnDiskLow: true, MinFreeDiskGB: LadoDefaultMinFreeDiskGB,
+		RestoreOnStart: LadoRestoreOnStartOn}
 }
 
 // LadoDefaultMaxPlanWorkers is how many plan requests run at once until the
@@ -572,6 +602,9 @@ func (s LadoDispatchSettings) Validate() error {
 	}
 	if s.MinFreeDiskGB < 1 || s.MinFreeDiskGB > LadoMinFreeDiskGBMax {
 		return fmt.Errorf("%w: minFreeDiskGb must be 1 to %d, got %d", ErrLadoDispatchSettingsInvalid, LadoMinFreeDiskGBMax, s.MinFreeDiskGB)
+	}
+	if s.RestoreOnStart != LadoRestoreOnStartOn && s.RestoreOnStart != LadoRestoreOnStartOff {
+		return fmt.Errorf("%w: restoreOnStart must be on or off, got %q", ErrLadoDispatchSettingsInvalid, s.RestoreOnStart)
 	}
 	if err := s.PlanReview.Validate(); err != nil {
 		return fmt.Errorf("%w: %w", ErrLadoDispatchSettingsInvalid, err)

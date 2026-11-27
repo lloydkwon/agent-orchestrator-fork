@@ -966,6 +966,7 @@ func (s *Store) SetLadoDispatchSettings(ctx context.Context, settings domain.Lad
 			MaxWorkers:             int64(settings.MaxWorkers),
 			HoldOnDiskLow:          boolInt(settings.HoldOnDiskLow),
 			MinFreeDiskGb:          int64(settings.MinFreeDiskGB),
+			RestoreOnStart:         boolInt(settings.RestoreOnStart.On()),
 		}); err != nil {
 			return err
 		}
@@ -1147,10 +1148,11 @@ func ladoDispatchSettingsFromGen(row gen.LadoDispatchSetting) domain.LadoDispatc
 			MaxPaths: int(row.PlanReviewSkipMaxPaths),
 			Patterns: patterns,
 		},
-		MaxWorkers:    int(row.MaxWorkers),
-		HoldOnDiskLow: row.HoldOnDiskLow == 1,
-		MinFreeDiskGB: int(row.MinFreeDiskGb),
-		UpdatedAt:     row.UpdatedAt.UTC(),
+		MaxWorkers:     int(row.MaxWorkers),
+		HoldOnDiskLow:  row.HoldOnDiskLow == 1,
+		MinFreeDiskGB:  int(row.MinFreeDiskGb),
+		RestoreOnStart: domain.LadoRestoreOnStartOf(row.RestoreOnStart == 1),
+		UpdatedAt:      row.UpdatedAt.UTC(),
 	}
 }
 

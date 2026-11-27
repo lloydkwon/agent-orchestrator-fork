@@ -60,6 +60,9 @@ describe("LADO usage text", () => {
 			"Worker quiet for over 120 min; LADO sent the nudge",
 		);
 		expect(ladoAlertText(t, ladoAlert({ kind: "stalled", value: 120 }), "en")).toBe("Worker quiet for over 120 min");
+		expect(ladoAlertText(t, ladoAlert({ kind: "restart_resumed" }), "en")).toBe(
+			"Started again after a restart; LADO told the worker to go on",
+		);
 		expect(ladoAlertText(t, ladoAlert({ kind: "agent_unavailable" }), "en")).toContain("LADO holds the new worker");
 		expect(ladoAlertText(t, ladoAlert({ kind: "conflict_unresolved", value: 2 }), "en")).toBe(
 			"Resolve workers failed 2 times in a row; resolve the conflict yourself",
