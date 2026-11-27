@@ -22,6 +22,12 @@ type reportProjectReader interface {
 	ListProject(context.Context, domain.ProjectID) ([]domain.ReportRecord, error)
 }
 
+// reportSessionReader lists one session's reports, including those of a
+// session without a project (LADO fork, GitHub issue #8).
+type reportSessionReader interface {
+	ListSession(context.Context, domain.SessionID) ([]domain.ReportRecord, error)
+}
+
 // ReportsController owns the /reports routes.
 type ReportsController struct{ Svc ReportService }
 
@@ -36,17 +42,35 @@ func (c *ReportsController) list(w http.ResponseWriter, r *http.Request) {
 		apispec.NotImplemented(w, r, "GET", "/api/v1/reports")
 		return
 	}
-	reader, ok := c.Svc.(reportProjectReader)
-	if !ok {
-		apispec.NotImplemented(w, r, "GET", "/api/v1/reports")
-		return
-	}
 	projectID := domain.ProjectID(r.URL.Query().Get("projectId"))
-	if projectID == "" {
-		envelope.WriteAPIError(w, r, http.StatusBadRequest, "validation", "REPORT_PROJECT_REQUIRED", "Project id is required", nil)
+	sessionID := domain.SessionID(r.URL.Query().Get("sessionId"))
+	if projectID != "" && sessionID != "" {
+		envelope.WriteAPIError(w, r, http.StatusBadRequest, "validation", "REPORT_SCOPE_CONFLICT", "Give either a project id or a session id, not both", nil)
 		return
 	}
-	records, err := reader.ListProject(r.Context(), projectID)
+	var (
+		records []domain.ReportRecord
+		err     error
+	)
+	switch {
+	case sessionID != "":
+		reader, ok := c.Svc.(reportSessionReader)
+		if !ok {
+			apispec.NotImplemented(w, r, "GET", "/api/v1/reports")
+			return
+		}
+		records, err = reader.ListSession(r.Context(), sessionID)
+	case projectID != "":
+		reader, ok := c.Svc.(reportProjectReader)
+		if !ok {
+			apispec.NotImplemented(w, r, "GET", "/api/v1/reports")
+			return
+		}
+		records, err = reader.ListProject(r.Context(), projectID)
+	default:
+		envelope.WriteAPIError(w, r, http.StatusBadRequest, "validation", "REPORT_PROJECT_REQUIRED", "Project id or session id is required", nil)
+		return
+	}
 	if err != nil {
 		envelope.WriteError(w, r, err)
 		return

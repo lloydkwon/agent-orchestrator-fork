@@ -72,9 +72,12 @@ type ListReportsResponse struct {
 	Reports []ReportResponse `json:"reports"`
 }
 
-// ListReportsQuery selects reports by stable project identity.
+// ListReportsQuery selects reports by stable project identity or by one
+// session. Exactly one of the two is given; a session without a project has
+// reports only under its session id (LADO fork, GitHub issue #8).
 type ListReportsQuery struct {
-	ProjectID string `query:"projectId" required:"true" description:"Stable project identifier."`
+	ProjectID string `query:"projectId,omitempty" description:"Stable project identifier. Give this or sessionId, not both."`
+	SessionID string `query:"sessionId,omitempty" description:"Session identifier, also for a session without a project. Give this or projectId, not both."`
 }
 
 // HTTP response envelopes for the projects surface — the SINGLE definition of

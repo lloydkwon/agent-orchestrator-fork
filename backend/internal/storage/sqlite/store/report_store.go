@@ -23,7 +23,7 @@ func (s *Store) CreateReport(ctx context.Context, rec domain.ReportRecord) (doma
 	err := s.inTx(ctx, "create report", func(q *gen.Queries) error {
 		var err error
 		row, err = q.CreateReport(ctx, gen.CreateReportParams{
-			ID: rec.ID, SessionID: string(rec.SessionID), ProjectID: string(rec.ProjectID),
+			ID: rec.ID, SessionID: string(rec.SessionID), ProjectID: optionalProjectID(rec.ProjectID),
 			State: string(rec.State), Note: rec.Note, Message: rec.Message,
 			CreatedAt: rec.CreatedAt, AvailableAt: rec.AvailableAt,
 			SettlementDeadline: nullTime(rec.SettlementDeadline), RepeatCount: rec.RepeatCount,
@@ -86,7 +86,7 @@ func (s *Store) ListReportedPRURLs(ctx context.Context, id domain.SessionID) ([]
 // ListReportsByProject is the read-only persisted report projection. Consumers
 // such as Project Summary do not participate in the delivery claim lifecycle.
 func (s *Store) ListReportsByProject(ctx context.Context, id domain.ProjectID) ([]domain.ReportRecord, error) {
-	rows, err := s.qr.ListReportsByProject(ctx, string(id))
+	rows, err := s.qr.ListReportsByProject(ctx, optionalProjectID(id))
 	if err != nil {
 		return nil, fmt.Errorf("list project reports: %w", err)
 	}
@@ -114,7 +114,7 @@ func (s *Store) ClaimPendingReportBatch(ctx context.Context, projectID domain.Pr
 	var rows []gen.Report
 	err := s.inTx(ctx, "claim project report batch", func(q *gen.Queries) error {
 		scheduled, err := q.ListPendingReportsByProjectSchedule(ctx, gen.ListPendingReportsByProjectScheduleParams{
-			ProjectID: string(projectID), Limit: 1,
+			ProjectID: optionalProjectID(projectID), Limit: 1,
 		})
 		if err != nil || len(scheduled) == 0 {
 			return err
@@ -123,13 +123,13 @@ func (s *Store) ClaimPendingReportBatch(ctx context.Context, projectID domain.Pr
 		if batchID == "" {
 			batchID = "report-batch:" + scheduled[0].ID
 			if err := q.AssignPendingReportsToBatch(ctx, gen.AssignPendingReportsToBatchParams{
-				DeliveryBatchID: batchID, ProjectID: string(projectID),
+				DeliveryBatchID: batchID, ProjectID: optionalProjectID(projectID),
 			}); err != nil {
 				return err
 			}
 		}
 		rows, err = q.ClaimPendingReportsByBatch(ctx, gen.ClaimPendingReportsByBatchParams{
-			ProjectID: string(projectID), DeliveryBatchID: batchID,
+			ProjectID: optionalProjectID(projectID), DeliveryBatchID: batchID,
 			ClaimToken: token, ClaimedAt: nullTime(at),
 		})
 		return err
@@ -148,7 +148,7 @@ func (s *Store) AcknowledgeReportBatch(ctx context.Context, projectID domain.Pro
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
 	rows, err := s.qw.AcknowledgeReportBatch(ctx, gen.AcknowledgeReportBatchParams{
-		ProjectID: string(projectID), ClaimToken: token, AcknowledgedAt: nullTime(at),
+		ProjectID: optionalProjectID(projectID), ClaimToken: token, AcknowledgedAt: nullTime(at),
 	})
 	if err != nil {
 		return 0, fmt.Errorf("acknowledge project report batch: %w", err)
@@ -165,7 +165,7 @@ func (s *Store) ReleaseReportBatch(ctx context.Context, projectID domain.Project
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
 	rows, err := s.qw.ReleaseReportBatch(ctx, gen.ReleaseReportBatchParams{
-		ProjectID: string(projectID), ClaimToken: token, AvailableAt: at, LastError: lastError,
+		ProjectID: optionalProjectID(projectID), ClaimToken: token, AvailableAt: at, LastError: lastError,
 	})
 	if err != nil {
 		return 0, fmt.Errorf("release project report batch: %w", err)
@@ -183,7 +183,7 @@ func (s *Store) DeferReportBatch(ctx context.Context, projectID domain.ProjectID
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
 	rows, err := s.qw.DeferReportBatch(ctx, gen.DeferReportBatchParams{
-		ProjectID: string(projectID), ClaimToken: token, AvailableAt: at, LastError: lastError,
+		ProjectID: optionalProjectID(projectID), ClaimToken: token, AvailableAt: at, LastError: lastError,
 	})
 	if err != nil {
 		return 0, fmt.Errorf("defer project report batch: %w", err)
@@ -313,7 +313,7 @@ func orderedReportRows(rows []gen.Report) []gen.Report {
 
 func reportFromGen(r gen.Report) domain.ReportRecord {
 	return domain.ReportRecord{
-		ID: r.ID, SessionID: domain.SessionID(r.SessionID), ProjectID: domain.ProjectID(r.ProjectID),
+		ID: r.ID, SessionID: domain.SessionID(r.SessionID), ProjectID: projectIDValue(r.ProjectID),
 		State: domain.ReportState(r.State), Note: r.Note, Message: r.Message, CreatedAt: r.CreatedAt,
 		DeliveryState: domain.ReportDeliveryState(r.DeliveryState), AvailableAt: r.AvailableAt,
 		SettlementDeadline: timeFromNull(r.SettlementDeadline), RepeatCount: r.RepeatCount,

@@ -1325,7 +1325,7 @@ type Project struct {
 type Report struct {
 	ID                 string
 	SessionID          string
-	ProjectID          string
+	ProjectID          *domain.ProjectID
 	State              string
 	Note               string
 	Message            string

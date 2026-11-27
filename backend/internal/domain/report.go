@@ -139,69 +139,116 @@ type ReportRecord struct {
 // ErrInvalidReport reports an invalid report or delivery transition input.
 var ErrInvalidReport = errors.New("invalid report")
 
+// ReportInvalidError names the rule an invalid report broke, so callers can
+// tell the worker what to fix. errors.Is(err, ErrInvalidReport) holds for it.
+type ReportInvalidError struct {
+	Reason string
+}
+
+func (e *ReportInvalidError) Error() string { return ErrInvalidReport.Error() + ": " + e.Reason }
+
+// Unwrap keeps errors.Is(err, ErrInvalidReport) working for every reason.
+func (e *ReportInvalidError) Unwrap() error { return ErrInvalidReport }
+
+func invalidReport(reason string) error { return &ReportInvalidError{Reason: reason} }
+
 // Validate checks content, ownership, output, and delivery-state invariants.
+// ProjectID may be empty: a session without a project (ao spawn --standalone)
+// keeps its reports too, although no orchestrator receives them.
 func (r ReportRecord) Validate() error {
-	if r.ID == "" || r.SessionID == "" || r.ProjectID == "" || r.CreatedAt.IsZero() || r.AvailableAt.IsZero() || r.RepeatCount < 1 {
-		return ErrInvalidReport
+	if r.ID == "" || r.SessionID == "" || r.CreatedAt.IsZero() || r.AvailableAt.IsZero() || r.RepeatCount < 1 {
+		return invalidReport("report id, session, creation time, availability, and repeat count are required")
 	}
 	if err := ValidateReportContent(r.State, r.Note, r.Message, r.Outputs); err != nil {
 		return err
 	}
 	if r.State == ReportDone {
 		if r.SettlementDeadline.IsZero() {
-			return ErrInvalidReport
+			return invalidReport("a done report needs a settlement deadline")
 		}
 	} else if !r.SettlementDeadline.IsZero() {
-		return ErrInvalidReport
+		return invalidReport("only a done report has a settlement deadline")
 	}
-	switch r.DeliveryState {
-	case ReportPending:
-		if r.ClaimToken != "" || !r.ClaimedAt.IsZero() || !r.AcknowledgedAt.IsZero() {
-			return ErrInvalidReport
-		}
-	case ReportClaimed:
-		if r.ClaimToken == "" || r.ClaimedAt.IsZero() || !r.AcknowledgedAt.IsZero() {
-			return ErrInvalidReport
-		}
-	case ReportAcknowledged:
-		if r.ClaimToken == "" || r.ClaimedAt.IsZero() || r.AcknowledgedAt.IsZero() {
-			return ErrInvalidReport
-		}
-	default:
-		return ErrInvalidReport
+	if err := r.validateDelivery(); err != nil {
+		return err
 	}
 	if r.DeliveryAttempts < 0 {
-		return ErrInvalidReport
+		return invalidReport("delivery attempts cannot be negative")
 	}
 	return nil
 }
 
-// ValidateReportContent checks the authoritative report payload contract.
+func (r ReportRecord) validateDelivery() error {
+	switch r.DeliveryState {
+	case ReportPending:
+		if r.ClaimToken != "" || !r.ClaimedAt.IsZero() || !r.AcknowledgedAt.IsZero() {
+			return invalidReport("a pending report has no claim or acknowledgement")
+		}
+	case ReportClaimed:
+		if r.ClaimToken == "" || r.ClaimedAt.IsZero() || !r.AcknowledgedAt.IsZero() {
+			return invalidReport("a claimed report needs a claim token and time and no acknowledgement")
+		}
+	case ReportAcknowledged:
+		if r.ClaimToken == "" || r.ClaimedAt.IsZero() || r.AcknowledgedAt.IsZero() {
+			return invalidReport("an acknowledged report needs a claim token, claim time, and acknowledgement time")
+		}
+	default:
+		return invalidReport(fmt.Sprintf("unknown delivery state %q", r.DeliveryState))
+	}
+	return nil
+}
+
+// ValidateReportContent checks the authoritative report payload contract. The
+// returned error is a *ReportInvalidError naming the broken rule.
 func ValidateReportContent(state ReportState, note, message string, outputs []ReportOutput) error {
 	if message != "" {
-		if state != "" || note != "" || len(outputs) != 0 || strings.TrimSpace(message) == "" || utf8.RuneCountInString(message) > MaxReportTextCharacters {
-			return ErrInvalidReport
+		switch {
+		case state != "" || note != "" || len(outputs) != 0:
+			return invalidReport("a message cannot be combined with a state, note, or outputs")
+		case strings.TrimSpace(message) == "":
+			return invalidReport("the message is blank")
+		case utf8.RuneCountInString(message) > MaxReportTextCharacters:
+			return invalidReport(fmt.Sprintf("the message is longer than %d characters", MaxReportTextCharacters))
 		}
 		return nil
 	}
-	if state == "" {
-		if note != "" || len(outputs) == 0 {
-			return ErrInvalidReport
+	switch {
+	case state == "":
+		if note != "" {
+			return invalidReport("a note needs a state")
 		}
-	} else if !state.Valid() || strings.TrimSpace(note) == "" || utf8.RuneCountInString(note) > MaxReportTextCharacters {
-		return ErrInvalidReport
+		if len(outputs) == 0 {
+			return invalidReport("a report needs a message, a state with a note, or outputs")
+		}
+	case !state.Valid():
+		return invalidReport(fmt.Sprintf("unknown state %q", state))
+	case strings.TrimSpace(note) == "":
+		return invalidReport(fmt.Sprintf("state %q needs a note", state))
+	case utf8.RuneCountInString(note) > MaxReportTextCharacters:
+		return invalidReport(fmt.Sprintf("the note is longer than %d characters", MaxReportTextCharacters))
 	}
-	for _, output := range outputs {
-		if !output.Kind.Valid() || strings.TrimSpace(output.Reference) == "" {
-			return ErrInvalidReport
-		}
-		if output.Kind == ReportOutputPRCreated || output.Kind == ReportOutputPRReviewed {
-			if _, err := ParseChangeRequestURL(output.Reference); err != nil {
-				return ErrInvalidReport
-			}
+	for i, output := range outputs {
+		if problem := reportOutputProblem(output); problem != "" {
+			return invalidReport(fmt.Sprintf("output %d: %s", i+1, problem))
 		}
 	}
 	return nil
+}
+
+// reportOutputProblem returns why output is invalid, or "" when it is valid.
+func reportOutputProblem(output ReportOutput) string {
+	if !output.Kind.Valid() {
+		return fmt.Sprintf("unknown kind %q", output.Kind)
+	}
+	if strings.TrimSpace(output.Reference) == "" {
+		return "the reference is blank"
+	}
+	if output.Kind == ReportOutputPRCreated || output.Kind == ReportOutputPRReviewed {
+		if _, err := ParseChangeRequestURL(output.Reference); err != nil {
+			return fmt.Sprintf("%s needs a pull request or merge request URL", output.Kind)
+		}
+	}
+	return ""
 }
 
 // WrapSessionDelivery preserves AO session-origin direction as coordination in

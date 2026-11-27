@@ -29,8 +29,10 @@ ORDER BY r.created_at, r.id, o.position;
 SELECT * FROM reports WHERE project_id = ? ORDER BY created_at, id;
 
 -- name: ListPendingReportSchedule :many
+-- LADO fork: a report of a session without a project has no orchestrator
+-- to deliver to, so it never enters the delivery schedule (GitHub issue #8).
 SELECT * FROM reports
-WHERE delivery_state = 'pending'
+WHERE delivery_state = 'pending' AND project_id IS NOT NULL
 ORDER BY available_at, created_at, id
 LIMIT ?;
 
@@ -88,7 +90,7 @@ ON CONFLICT(session_id) DO UPDATE SET last_interrupted_at = excluded.last_interr
 
 -- name: ListPendingReports :many
 SELECT * FROM reports
-WHERE delivery_state = 'pending' AND available_at <= ?
+WHERE delivery_state = 'pending' AND project_id IS NOT NULL AND available_at <= ?
 ORDER BY created_at, id
 LIMIT ?;
 

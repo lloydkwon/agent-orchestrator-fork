@@ -860,7 +860,7 @@ func identityOperations() []operation {
 func reportOperations() []operation {
 	return []operation{{
 		method: http.MethodGet, path: "/api/v1/reports", id: "listReports", tag: "reports",
-		summary:    "List persisted project reports without changing delivery state",
+		summary:    "List persisted reports of one project or one session without changing delivery state",
 		pathParams: []any{controllers.ListReportsQuery{}},
 		resps: []respUnit{
 			{http.StatusOK, controllers.ListReportsResponse{}},
