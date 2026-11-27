@@ -154,3 +154,41 @@ func TestManager_AddSucceedsWhenLadoDefaultsFail(t *testing.T) {
 		t.Fatalf("GetProject = %v, %v, want the project registered", ok, err)
 	}
 }
+
+// cancelAfterUpsert cancels the request right after the project row is
+// stored, as when the client drops the connection then.
+type cancelAfterUpsert struct {
+	*sqlite.Store
+	cancel context.CancelFunc
+}
+
+func (s cancelAfterUpsert) UpsertProject(ctx context.Context, row domain.ProjectRecord) error {
+	err := s.Store.UpsertProject(ctx, row)
+	s.cancel()
+	return err
+}
+
+// A request cancelled once the project is stored still gives the project its
+// LADO settings: the registration has happened.
+func TestManager_AddAppliesLadoDefaultsAfterTheRequestEnds(t *testing.T) {
+	t.Setenv("GIT_CEILING_DIRECTORIES", os.TempDir())
+	store, err := sqlitetest.Open(t.TempDir())
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	lado := ladoproject.New(ladoproject.Deps{Store: store, Projects: store})
+	m := project.NewWithDeps(project.Deps{Store: cancelAfterUpsert{Store: store, cancel: cancel}, LadoDefaults: lado})
+
+	if _, err := m.Add(ctx, project.AddInput{Path: gitRepo(t), ProjectID: ptr("mer")}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	if ctx.Err() == nil {
+		t.Fatal("the request was not cancelled after the project was stored")
+	}
+	if got := ladoSettings(t, store, "mer"); !got.LadoMode || got.MaxConcurrent != domain.LadoNewProjectMaxConcurrent {
+		t.Fatalf("settings = %+v, want LADO mode on and cap %d", got, domain.LadoNewProjectMaxConcurrent)
+	}
+}

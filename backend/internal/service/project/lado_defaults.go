@@ -15,14 +15,15 @@ type LadoProjectDefaults interface {
 	ApplyNewProjectDefaults(ctx context.Context, project domain.ProjectRecord) error
 }
 
-// applyLadoDefaults gives a project Add has just stored its LADO settings. A
+// applyLadoDefaults gives a project Add has just stored its LADO settings. The
+// registration is committed, so the write outlives a request that ends now. A
 // failure leaves the project registered with the settings a project without
 // stored ones reads, LADO mode off, and is logged.
 func (m *Service) applyLadoDefaults(ctx context.Context, row domain.ProjectRecord) {
 	if m.ladoDefaults == nil {
 		return
 	}
-	if err := m.ladoDefaults.ApplyNewProjectDefaults(ctx, row); err != nil {
+	if err := m.ladoDefaults.ApplyNewProjectDefaults(context.WithoutCancel(ctx), row); err != nil {
 		m.logger.Warn("project: could not apply the LADO defaults to the new project", "projectId", row.ID, "error", err)
 	}
 }
