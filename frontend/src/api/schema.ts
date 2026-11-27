@@ -6387,6 +6387,7 @@ export interface components {
             lastInteractionAt?: null | string;
             /** Format: date-time */
             lastUserMessageAt?: null | string;
+            lastUserMessagePreview?: string;
             /** @enum {string} */
             mode: "chat" | "tui";
             model?: string;

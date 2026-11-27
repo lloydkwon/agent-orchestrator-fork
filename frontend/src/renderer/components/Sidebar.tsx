@@ -92,6 +92,8 @@ import { useLatestCallback, useStableArray } from "../hooks/useStable";
 import { useCloudGate } from "../hooks/useCloudGate";
 import { useCloudLocalAuth } from "../hooks/useCloudLocalAuth";
 import { useLocalSignInDialogStore } from "../stores/local-signin-dialog-store";
+import { resolveSessionDetail, sessionDetailKey, visibleSessionDetail } from "../lib/session-detail";
+import { useSessionDetailStore } from "../stores/session-detail-store";
 import { useShellMaybe } from "../lib/shell-context";
 import { useSidebarUpdateDismissal } from "../hooks/useSidebarUpdateDismissal";
 import { useUpdateStatus } from "../hooks/useUpdateStatus";
@@ -618,6 +620,7 @@ export function Sidebar({
 	resizeAuxiliaryTargetRef,
 }: SidebarProps) {
 	const { t } = useTranslation();
+	useRememberSessionDetails(workspaces, remoteWorkspaces);
 	const remoteNavigate = useNavigate();
 	const selection = useSelection();
 	const { state, setOpen, toggleSidebar } = useSidebar();
@@ -2327,6 +2330,47 @@ type SessionReorder = Pick<SortableRow, "isDragging" | "listeners" | "setActivat
 // One worker-session row. Reads as a link by default; double-click/double-tap
 // on the name or F2 flips the label into an inline input (Enter/blur saves,
 // Escape cancels) that persists through the daemon rename endpoint.
+// LADO fork: 스크래치패드 세션의 둘째 줄(최근 프롬프트)이 있는 행의 치수.
+// 행은 44px 로 커지고(위아래 4px + 제목 줄 20px + 둘째 줄 16px), 동작 버튼과 시간은 제목 줄에 남는다.
+// 그 둘은 행에 절대 위치로 붙어 있어(inset-y-0) 그대로 두면 두 줄의 가운데로 내려오므로, 행 쪽에서
+// 높이를 28px 로 묶어 가운데가 제목 줄의 가운데(위에서 14px)와 만나게 한다.
+const TWO_LINE_SESSION_ROW_CLASS =
+	"h-11 [&>[data-session-actions]]:bottom-auto [&>[data-session-actions]]:h-7 [&>[data-session-message-age]]:bottom-auto [&>[data-session-message-age]]:h-7";
+// 둘째 줄은 제목 글자 밑에서 시작한다: 상태 칸 20px + 제목과의 간격 6px(gap-1.5).
+// 시간·동작 버튼은 제목 줄에만 있으므로 둘째 줄은 그 자리를 비우지 않고 행 끝까지 쓴다.
+// 이 줄이 제목이 같은 세션을 가르는 정보이므로 passive 대비까지 낮추지 않는다(DESIGN.md «Text stack»).
+const SESSION_DETAIL_CLASS = "relative z-[1] w-full min-w-0 truncate pl-[26px] pr-2.5 text-xs leading-4 text-muted-foreground";
+
+/** LADO fork: 스크래치패드 세션 행의 둘째 줄. 프로젝트 세션은 제목이 일을 말해 주므로 붙이지 않는다. */
+function useSessionDetail(session: WorkspaceSession): string | undefined {
+	const isStandalone = session.workspaceId === STANDALONE_WORKSPACE_ID;
+	const key = sessionDetailKey(session);
+	const remembered = useSessionDetailStore((state) => (isStandalone ? state.details[key] : undefined));
+	if (!isStandalone) return undefined;
+	return visibleSessionDetail(session.title, resolveSessionDetail(remembered, session.lastUserMessagePreview));
+}
+
+/**
+ * LADO fork: 스크래치패드 세션마다 보일 줄을 기억해 둔다. 행이 아니라 사이드바에서 하는 까닭은, 행이
+ * 그려지지 않는 동안(구역을 접었거나 «더 보기» 뒤에 있을 때)에도 따라가야 해서다. 그러지 않으면 그 사이에
+ * 긴 지시와 짧은 대답이 이어진 세션이 다시 보일 때 더 오래된 일을 보인다.
+ * 앱이 꺼져 있던 동안의 지시는 따라가지 못한다. 데몬은 최근 프롬프트 하나만 갖고 있다.
+ */
+function useRememberSessionDetails(workspaces: readonly WorkspaceSummary[], remoteWorkspaces: readonly WorkspaceSummary[]) {
+	useEffect(() => {
+		const { remember } = useSessionDetailStore.getState();
+		for (const workspace of [...workspaces, ...remoteWorkspaces]) {
+			if (workspace.id !== STANDALONE_WORKSPACE_ID) continue;
+			for (const session of workspace.sessions) {
+				const key = sessionDetailKey(session);
+				const remembered = useSessionDetailStore.getState().details[key];
+				const detail = resolveSessionDetail(remembered, session.lastUserMessagePreview);
+				if (detail && detail !== remembered) remember(key, detail);
+			}
+		}
+	}, [workspaces, remoteWorkspaces]);
+}
+
 const SessionRow = memo(function SessionRow({
 	session,
 	active,
@@ -2360,7 +2404,37 @@ const SessionRow = memo(function SessionRow({
 		? t(switchPresentation.compactLabelKey, switchPresentation.values)
 		: undefined;
 	const switchStatusId = useId();
-	const describedBy = switchLabel ? switchStatusId : undefined;
+	const detail = useSessionDetail(session);
+	const detailId = useId();
+	// 버튼의 aria-label 이 행의 글자를 가리므로, 둘째 줄은 설명으로 이어 준다.
+	const describedBy = [switchLabel ? switchStatusId : undefined, detail ? detailId : undefined].filter(Boolean).join(" ") || undefined;
+	const detailLine = detail ? (
+		<span
+			className={SESSION_DETAIL_CLASS}
+			data-session-detail=""
+			id={detailId}
+			title={detail}
+		>
+			{detail}
+		</span>
+	) : null;
+	// 제목 줄이 오른쪽에 비워 두는 자리: 평소에는 시간, 가리키거나 초점이 오면 동작 버튼.
+	const titleLineReserveClass = cn(
+		(session.lastInteractionAt ?? session.lastUserMessageAt) ? "pr-[36px]" : "pr-2.5",
+		!reorder?.isDragging &&
+			"group-hover/session-row:pr-sidebar-project-actions group-has-[:focus-visible]/session-row:pr-sidebar-project-actions",
+	);
+	// 둘째 줄이 있으면 상태 칸과 제목(또는 편집 칸)을 첫 줄로 묶고 그 아래에 둘째 줄을 둔다.
+	// 없으면 그대로 돌려주어 한 줄 행의 DOM 은 바뀌지 않는다.
+	const withDetail = (firstLine: ReactNode, firstLineClassName?: string) =>
+		detailLine ? (
+			<>
+				<span className={cn("flex w-full min-w-0 items-center gap-1.5", firstLineClassName)}>{firstLine}</span>
+				{detailLine}
+			</>
+		) : (
+			firstLine
+		);
 	const queryClient = useQueryClient();
 	const refreshWorkspaces = useCallback(
 		() => queryClient.invalidateQueries({ queryKey: workspaceQueryKeyForHost(session.hostId) }),
@@ -2398,12 +2472,15 @@ const SessionRow = memo(function SessionRow({
 			<SidebarMenuSubItem className={cn(indented && "pl-0.5")}>
 				<div
 					className={cn(
-						"group/nav-row relative flex h-8 w-full items-center gap-1.5 rounded-lg py-0 pl-1.5 pr-1",
+						"group/nav-row relative flex w-full rounded-lg py-0 pl-1.5 pr-1",
+						detailLine ? cn("flex-col justify-center", TWO_LINE_SESSION_ROW_CLASS) : "h-8 items-center gap-1.5",
 						active && "text-foreground",
 					)}
 					data-session-row=""
 				>
 					<NavRowHighlight active={active} />
+					{withDetail(
+						<>
 					<SessionStatusDot session={session} />
 					<input
 						aria-label={t("shell.renameSession", { title: session.title })}
@@ -2428,6 +2505,9 @@ const SessionRow = memo(function SessionRow({
 						}}
 						value={rename.draft}
 					/>
+						</>,
+						"relative z-[1] h-5",
+					)}
 					<SessionMessageAge session={session} />
 				</div>
 			</SidebarMenuSubItem>
@@ -2450,7 +2530,8 @@ const SessionRow = memo(function SessionRow({
 			>
 				<div
 					className={cn(
-						"group/session-row group/nav-row relative flex h-8 w-full items-center rounded-lg",
+						"group/session-row group/nav-row relative flex w-full items-center rounded-lg",
+						detailLine ? TWO_LINE_SESSION_ROW_CLASS : "h-8",
 						"hover:text-foreground",
 						active && "text-foreground",
 					)}
@@ -2466,10 +2547,8 @@ const SessionRow = memo(function SessionRow({
 							aria-keyshortcuts="F2"
 							aria-label={t("shell.openSession", { title: hostLabel ? `${session.title} · ${hostLabel}` : session.title })}
 							className={cn(
-								"flex h-8 min-w-0 flex-1 items-center gap-1.5 rounded-lg py-0 pl-1.5 text-left text-sm outline-hidden focus-visible:ring-2 focus-visible:ring-sidebar-ring",
-								(session.lastInteractionAt ?? session.lastUserMessageAt) ? "pr-[36px]" : "pr-2.5",
-								!reorder?.isDragging &&
-									"group-hover/session-row:pr-sidebar-project-actions group-has-[:focus-visible]/session-row:pr-sidebar-project-actions",
+								"flex min-w-0 flex-1 rounded-lg py-0 pl-1.5 text-left text-sm outline-hidden focus-visible:ring-2 focus-visible:ring-sidebar-ring",
+								detailLine ? "h-11 flex-col justify-center pr-0" : cn("h-8 items-center gap-1.5", titleLineReserveClass),
 								reorder && "cursor-grab active:cursor-grabbing",
 								reorder?.isDragging && "!cursor-grabbing",
 							)}
@@ -2506,6 +2585,8 @@ const SessionRow = memo(function SessionRow({
 							ref={reorder?.setActivatorNodeRef}
 							type="button"
 						>
+							{withDetail(
+								<>
 							<SessionStatusDot session={session} />
 							<span className="flex min-w-0 flex-1 items-center gap-1.5">
 								<span
@@ -2533,6 +2614,9 @@ const SessionRow = memo(function SessionRow({
 									</span>
 								) : null}
 							</span>
+								</>,
+								titleLineReserveClass,
+							)}
 						</button>
 					</div>
 					{/* The timestamp is stable at the right edge. Pin and kill use label

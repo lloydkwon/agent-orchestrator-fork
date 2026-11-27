@@ -392,6 +392,10 @@ type SessionView struct {
 	// LastUserMessageAt is the latest real user-authored task direction time.
 	// Lifecycle and internal automation updates do not advance it.
 	LastUserMessageAt *time.Time `json:"lastUserMessageAt,omitempty"`
+	// LADO fork: LastUserMessagePreview 는 위 시각의 그 최근 사용자 지시를 한 줄로 접은 것이다.
+	// 첫 입력 없이 시작한 스크래치패드 에이전트는 모두 하니스 이름이 제목이라, 목록이 이 줄로
+	// 세션을 구분한다. 공백을 접고 길이를 자른 것이므로 전문은 대화에서 읽는다.
+	LastUserMessagePreview string `json:"lastUserMessagePreview,omitempty" maxLength:"160"`
 	// LastInteractionAt includes human direction and same-project orchestrator messages.
 	LastInteractionAt *time.Time `json:"lastInteractionAt,omitempty"`
 	// LastEventAt is when something a person would notice last happened: an

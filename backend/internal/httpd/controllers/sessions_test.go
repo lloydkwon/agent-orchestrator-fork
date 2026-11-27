@@ -5004,6 +5004,51 @@ func TestSessionsAPI_SendCarriesCooperativeSenderWithoutHumanAuthorship(t *testi
 	}
 }
 
+// LADO fork: 사이드바가 기본 제목이 같은 스크래치패드 세션을 최근 사용자 프롬프트로 구분하므로,
+// 세션 응답이 그것을 짧은 한 줄로 싣는다.
+func TestSessionsAPI_LastUserMessagePreviewIsOneCappedLine(t *testing.T) {
+	long := strings.Repeat("가", 200)
+	for _, tc := range []struct {
+		name, prompt, want string
+	}{
+		{name: "absent prompt is omitted", prompt: "", want: ""},
+		{name: "line breaks and runs of spaces collapse", prompt: "  사이드바  구분\n\n각 세션 밑에\t요약  ", want: "사이드바 구분 각 세션 밑에 요약"},
+		{name: "long prompt is cut on a rune boundary", prompt: long, want: strings.Repeat("가", 160)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			svc := newFakeSessionService()
+			srv := newSessionTestServer(t, svc)
+			rec := svc.sessions["ao-1"]
+			rec.Metadata.LatestUserPrompt = tc.prompt
+			svc.sessions["ao-1"] = rec
+			body, status, _ := doRequest(t, srv, "GET", "/api/v1/sessions/ao-1", "")
+			if status != http.StatusOK {
+				t.Fatalf("status=%d body=%s", status, body)
+			}
+			var response struct {
+				Session map[string]json.RawMessage `json:"session"`
+			}
+			if err := json.Unmarshal(body, &response); err != nil {
+				t.Fatal(err)
+			}
+			raw, present := response.Session["lastUserMessagePreview"]
+			if tc.want == "" {
+				if present {
+					t.Fatalf("lastUserMessagePreview=%s, want omitted", raw)
+				}
+				return
+			}
+			var got string
+			if err := json.Unmarshal(raw, &got); err != nil {
+				t.Fatalf("lastUserMessagePreview=%s: %v", raw, err)
+			}
+			if got != tc.want {
+				t.Fatalf("lastUserMessagePreview=%q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestSessionsAPI_InteractionRecencyKeepsHumanTimestampSeparate(t *testing.T) {
 	svc := newFakeSessionService()
 	srv := newSessionTestServer(t, svc)
