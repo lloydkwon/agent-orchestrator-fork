@@ -950,7 +950,9 @@ func (s *Store) SetLadoDispatchSettings(ctx context.Context, settings domain.Lad
 }
 
 // LadoProjectMaxConcurrent returns how many executions may run at once in a
-// project: domain.LadoDefaultProjectMaxConcurrent until it sets a cap.
+// project: domain.LadoDefaultProjectMaxConcurrent without a settings row. A
+// newly registered project gets one with domain.LadoNewProjectMaxConcurrent
+// (#3).
 func (s *Store) LadoProjectMaxConcurrent(ctx context.Context, projectID domain.ProjectID) (int, error) {
 	n, err := s.qr.GetLadoProjectMaxConcurrent(ctx, string(projectID))
 	if errors.Is(err, sql.ErrNoRows) {

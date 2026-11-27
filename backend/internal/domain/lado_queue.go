@@ -529,9 +529,14 @@ const (
 	LadoMinFreeDiskGBMax     = 1000
 )
 
-// LadoDefaultProjectMaxConcurrent is a project's cap on running executions
-// until it sets one.
+// LadoDefaultProjectMaxConcurrent is the cap on running executions of a
+// project without stored settings, such as one registered before new projects
+// got their own settings at registration.
 const LadoDefaultProjectMaxConcurrent = 1
+
+// LadoNewProjectMaxConcurrent is the cap a newly registered project starts
+// with (#3). Projects registered before keep theirs.
+const LadoNewProjectMaxConcurrent = 3
 
 // LadoRunMinuteChoices are the maximum run times an execution may have, in
 // minutes: no limit, or 1, 2, 4, 8, 12 or 24 hours.

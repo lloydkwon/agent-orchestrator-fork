@@ -152,6 +152,20 @@ func (f *fakeStore) SetLadoProjectOverlap(_ context.Context, projectID domain.Pr
 	return nil
 }
 
+func (f *fakeStore) CreateLadoNewProjectSettings(_ context.Context, projectID domain.ProjectID, ladoMode bool, maxConcurrent int, at time.Time) (bool, error) {
+	f.writes++
+	if f.writeErr != nil {
+		return false, f.writeErr
+	}
+	if _, ok := f.settings[projectID]; ok {
+		return false, nil
+	}
+	settings := f.stored(projectID)
+	settings.LadoMode, settings.MaxConcurrent, settings.UpdatedAt = ladoMode, maxConcurrent, at
+	f.save(settings)
+	return true, nil
+}
+
 // presence answers as a verified proof for the action it is asked about.
 func presence(nonce string) func(action, subject string) (domain.LadoPresenceProof, error) {
 	return func(action, subject string) (domain.LadoPresenceProof, error) {

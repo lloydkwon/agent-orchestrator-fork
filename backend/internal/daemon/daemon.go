@@ -691,7 +691,9 @@ func Run() error {
 	lcStack.LCM.SetSessionInputLease(sessMgr)
 	lcStack.LCM.SetSessionOperationGate(sessMgr)
 	termMgr.SetSessionInputLease(sessMgr)
-	projectSvc := projectsvc.NewWithDeps(projectsvc.Deps{Store: store, Sessions: sessionSvc, DefaultHarness: domain.AgentHarness(cfg.Agent), Telemetry: telemetrySink, Logger: log, OnModelScopeChanged: agentSvc.InvalidateProjectModelCatalogs})
+	// LADO fork: LadoDefaults gives a newly registered project LADO mode on and
+	// three executions at once (#3).
+	projectSvc := projectsvc.NewWithDeps(projectsvc.Deps{Store: store, Sessions: sessionSvc, DefaultHarness: domain.AgentHarness(cfg.Agent), Telemetry: telemetrySink, Logger: log, OnModelScopeChanged: agentSvc.InvalidateProjectModelCatalogs, LadoDefaults: ladoProjects})
 	// LADO fork: repository connections clone through the project service;
 	// tasks track their issues until shutdown (docs/LJY-PRD/TDD.md §5.1).
 	lado := wireLadoWork(ctx, cfg, store, projectSvc, ladoWorkDeps{sender: sessMgr, artifacts: lcStack.ArtifactVersions, sessions: sessionSvc, branches: sessMgr, memory: memoryReader,

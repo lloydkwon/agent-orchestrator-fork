@@ -77,6 +77,8 @@ type Service struct {
 	defaultHarness      domain.AgentHarness
 	logger              *slog.Logger
 	onModelScopeChanged func(projectID string)
+	// LADO fork: stores a new project's LADO settings (lado_defaults.go).
+	ladoDefaults LadoProjectDefaults
 	// addMu serialises the whole body of Add. Workspace registration performs
 	// filesystem mutations (git init, .gitignore writes, commits) that are not
 	// covered by the store's own writeMu, so path/id conflict checks plus the
@@ -103,6 +105,10 @@ type Deps struct {
 	// OnModelScopeChanged schedules non-blocking model-catalog invalidation
 	// after a project is created or its agent-relevant config changes.
 	OnModelScopeChanged func(projectID string)
+	// LADO fork: LadoDefaults stores the LADO settings a newly registered
+	// project starts with (lado_defaults.go). Left nil, a new project has no
+	// stored LADO settings.
+	LadoDefaults LadoProjectDefaults
 }
 
 // New returns a project service backed by the given durable store.
@@ -124,6 +130,7 @@ func NewWithDeps(d Deps) *Service {
 		defaultHarness:      defaultHarness,
 		logger:              d.Logger,
 		onModelScopeChanged: d.OnModelScopeChanged,
+		ladoDefaults:        d.LadoDefaults,
 	}
 	if s.clock == nil {
 		s.clock = time.Now
@@ -308,6 +315,7 @@ func (m *Service) Add(ctx context.Context, in AddInput) (Project, error) {
 		if err := m.store.UpsertWorkspaceProject(ctx, row, repos); err != nil {
 			return Project{}, apierr.Internal("PROJECT_ADD_FAILED", "Failed to register workspace project")
 		}
+		m.applyLadoDefaults(ctx, row)
 		m.modelScopeChanged(row.ID)
 		if in.ClonePreparationID != "" {
 			removeClonePreparationMarker(path)
@@ -357,6 +365,7 @@ func (m *Service) Add(ctx context.Context, in AddInput) (Project, error) {
 	if err := m.store.UpsertProject(ctx, row); err != nil {
 		return Project{}, apierr.Internal("PROJECT_ADD_FAILED", "Failed to register project")
 	}
+	m.applyLadoDefaults(ctx, row)
 	if in.ClonePreparationID != "" {
 		removeClonePreparationMarker(path)
 	}

@@ -52,6 +52,35 @@ func (q *Queries) GetLadoProjectSettings(ctx context.Context, projectID string) 
 	return i, err
 }
 
+const insertLadoNewProjectSettings = `-- name: InsertLadoNewProjectSettings :execrows
+INSERT INTO lado_project_settings (project_id, lado_mode, overlap_wait, max_concurrent, updated_at)
+VALUES (?, ?, 0, ?, ?)
+ON CONFLICT (project_id) DO NOTHING
+`
+
+type InsertLadoNewProjectSettingsParams struct {
+	ProjectID     string
+	LadoMode      int64
+	MaxConcurrent int64
+	UpdatedAt     time.Time
+}
+
+// A newly registered project starts with its own settings row (#3). A row
+// that already exists, such as one kept from an earlier registration of the
+// same project id, stays as it is. overlap_wait 0 as for every new row (#101).
+func (q *Queries) InsertLadoNewProjectSettings(ctx context.Context, arg InsertLadoNewProjectSettingsParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, insertLadoNewProjectSettings,
+		arg.ProjectID,
+		arg.LadoMode,
+		arg.MaxConcurrent,
+		arg.UpdatedAt,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const upsertLadoProjectCheckCommands = `-- name: UpsertLadoProjectCheckCommands :exec
 INSERT INTO lado_project_settings (project_id, lado_mode, overlap_wait, check_commands, updated_at)
 VALUES (?, 0, 0, ?, ?)
