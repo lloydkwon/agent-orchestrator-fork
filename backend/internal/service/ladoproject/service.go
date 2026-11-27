@@ -30,6 +30,9 @@ type Store interface {
 	// SetLadoProjectOverlap stores the overlap wait and the globs whose
 	// overlap does not count, nil for the defaults.
 	SetLadoProjectOverlap(ctx context.Context, projectID domain.ProjectID, wait bool, ignore []string, event domain.LadoAuditEvent) error
+	// CreateLadoNewProjectSettings stores a newly registered project's
+	// settings and reports false, changing nothing, when it has some already.
+	CreateLadoNewProjectSettings(ctx context.Context, projectID domain.ProjectID, ladoMode bool, maxConcurrent int, at time.Time) (bool, error)
 }
 
 // Projects reads AO's project registry.

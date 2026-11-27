@@ -15,6 +15,14 @@ ON CONFLICT (project_id) DO UPDATE SET
 RETURNING project_id, lado_mode, updated_at, max_concurrent, check_commands, check_timeout_minutes,
     overlap_wait, overlap_ignore_json;
 
+-- name: InsertLadoNewProjectSettings :execrows
+-- A newly registered project starts with its own settings row (#3). A row
+-- that already exists, such as one kept from an earlier registration of the
+-- same project id, stays as it is. overlap_wait 0 as for every new row (#101).
+INSERT INTO lado_project_settings (project_id, lado_mode, overlap_wait, max_concurrent, updated_at)
+VALUES (?, ?, 0, ?, ?)
+ON CONFLICT (project_id) DO NOTHING;
+
 -- name: GetLadoProjectChecks :one
 SELECT check_commands, check_timeout_minutes
 FROM lado_project_settings

@@ -65,7 +65,7 @@ func TestLadoOverlapWaitDefaultsOffForNewProjects(t *testing.T) {
 		return domain.LadoAuditEvent{At: at, Actor: "human", Action: action, SubjectKind: "project", SubjectID: project}
 	}
 	nonce := 0
-	// paths are the five writes that create a settings row for a project
+	// paths are the six writes that create a settings row for a project
 	// without one.
 	paths := []struct {
 		name  string
@@ -99,6 +99,11 @@ func TestLadoOverlapWaitDefaultsOffForNewProjects(t *testing.T) {
 		{"SetLadoProjectMaxConcurrent", func(t *testing.T, s *sqlite.Store, project string) {
 			if err := s.SetLadoProjectMaxConcurrent(ctx, domain.ProjectID(project), 3, event(project, "project.max_concurrent_changed")); err != nil {
 				t.Fatalf("SetLadoProjectMaxConcurrent: %v", err)
+			}
+		}},
+		{"CreateLadoNewProjectSettings", func(t *testing.T, s *sqlite.Store, project string) {
+			if _, err := s.CreateLadoNewProjectSettings(ctx, domain.ProjectID(project), true, domain.LadoNewProjectMaxConcurrent, at); err != nil {
+				t.Fatalf("CreateLadoNewProjectSettings: %v", err)
 			}
 		}},
 	}

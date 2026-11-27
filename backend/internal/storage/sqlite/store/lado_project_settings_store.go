@@ -16,9 +16,11 @@ import (
 )
 
 // LadoProjectSettings returns the project's LADO settings. A project without a
-// stored row has LADO mode off, the default cap, no check commands, the
-// default check time limit and overlap wait off (#101; the queries that create
-// a row store overlap_wait 0 to match).
+// stored row, such as one registered before new projects got a row at
+// registration (#3, CreateLadoNewProjectSettings), has LADO mode off, the
+// default cap, no check commands, the default check time limit and overlap
+// wait off (#101; the queries that create a row store overlap_wait 0 to
+// match).
 func (s *Store) LadoProjectSettings(ctx context.Context, projectID domain.ProjectID) (domain.LadoProjectSettings, error) {
 	row, err := s.qr.GetLadoProjectSettings(ctx, string(projectID))
 	if errors.Is(err, sql.ErrNoRows) {
@@ -55,6 +57,26 @@ func (s *Store) SetLadoMode(ctx context.Context, projectID domain.ProjectID, on 
 		return domain.LadoProjectSettings{}, fmt.Errorf("set LADO mode: %w", err)
 	}
 	return ladoProjectSettingsFromGen(row)
+}
+
+// CreateLadoNewProjectSettings stores the settings a newly registered project
+// starts with (#3). It reports false and changes nothing when the project
+// already has a settings row, such as one kept from an earlier registration.
+func (s *Store) CreateLadoNewProjectSettings(ctx context.Context, projectID domain.ProjectID, ladoMode bool, maxConcurrent int, at time.Time) (bool, error) {
+	if err := s.writeMu.LockContext(ctx); err != nil {
+		return false, err
+	}
+	defer s.writeMu.Unlock()
+	n, err := s.qw.InsertLadoNewProjectSettings(ctx, gen.InsertLadoNewProjectSettingsParams{
+		ProjectID:     string(projectID),
+		LadoMode:      boolInt(ladoMode),
+		MaxConcurrent: int64(maxConcurrent),
+		UpdatedAt:     at.UTC(),
+	})
+	if err != nil {
+		return false, fmt.Errorf("create new project LADO settings: %w", err)
+	}
+	return n > 0, nil
 }
 
 // LadoProjectChecks returns a project's check commands and their time limit
