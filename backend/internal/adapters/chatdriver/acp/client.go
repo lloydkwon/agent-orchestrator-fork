@@ -125,9 +125,13 @@ func (c *conversation) requestApproval(
 		options: options, result: make(chan string, 1), ready: make(chan struct{}),
 	}
 
+	// 턴 경계는 요청 이벤트를 낼 때까지만 쥔다. 결정을 기다리는 동안 쥐면
+	// 사용자 턴과 Compact 가 막힌다.
+	unlockBoundary := c.lockTurnBoundary()
 	c.mu.Lock()
 	if c.closed {
 		c.mu.Unlock()
+		unlockBoundary()
 		return "", nil
 	}
 	accepted, hasAccepted := c.accepted[requestID]
@@ -136,7 +140,7 @@ func (c *conversation) requestApproval(
 	} else {
 		c.pending[requestID] = request
 	}
-	turnID := c.activeTurn
+	turnID := c.currentTurnLocked()
 	c.mu.Unlock()
 	c.emit(ports.ChatEvent{
 		Kind:           ports.ChatEventApprovalRequested,
@@ -149,6 +153,7 @@ func (c *conversation) requestApproval(
 		RequestID:      requestID,
 		Decisions:      params.Decisions,
 	})
+	unlockBoundary()
 	close(request.ready)
 	if hasAccepted && accepted.Kind == persistentInteractionApproval {
 		c.emit(persistentInteractionEvent(accepted))
@@ -249,9 +254,12 @@ func (c *conversation) requestInput(
 	parked := &parkedInput{
 		request: request, result: make(chan ports.ChatInputResponse, 1), ready: make(chan struct{}),
 	}
+	// requestApproval 과 같이 턴 경계는 요청 이벤트를 낼 때까지만 쥔다.
+	unlockBoundary := c.lockTurnBoundary()
 	c.mu.Lock()
 	if c.closed {
 		c.mu.Unlock()
+		unlockBoundary()
 		return ports.ChatInputResponse{Action: ports.ChatInputActionCancel}, nil
 	}
 	accepted, hasAccepted := c.accepted[requestID]
@@ -260,13 +268,14 @@ func (c *conversation) requestInput(
 	} else {
 		c.pendingInputs[requestID] = parked
 	}
-	turnID := c.activeTurn
+	turnID := c.currentTurnLocked()
 	c.mu.Unlock()
 
 	c.emit(ports.ChatEvent{
 		Kind: ports.ChatEventInputRequested, ProviderTurnID: turnID,
 		RequestID: requestID, Input: &request, Summary: request.Message,
 	})
+	unlockBoundary()
 	close(parked.ready)
 	if hasAccepted && accepted.Kind == persistentInteractionInput {
 		c.emit(persistentInteractionEvent(accepted))
@@ -310,8 +319,10 @@ func stableACPRequestID(meta map[string]any) string {
 
 // UpdatePlan publishes a provider extension plan on the active AO turn.
 func (c *conversation) UpdatePlan(plan *domain.ConversationPlan) {
+	unlockBoundary := c.lockTurnBoundary()
+	defer unlockBoundary()
 	c.mu.Lock()
-	turnID := c.activeTurn
+	turnID := c.currentTurnLocked()
 	c.mu.Unlock()
 	c.emit(ports.ChatEvent{Kind: ports.ChatEventPlanUpdated, ProviderTurnID: turnID, Plan: plan})
 }
@@ -590,11 +601,19 @@ func (c *conversation) processUpdate(params acpsdk.SessionNotification) error {
 	}
 	c.mu.Lock()
 	sessionID := c.sessionID
-	turnID := c.activeTurn
 	c.mu.Unlock()
 	if sessionID != "" && string(params.SessionId) != sessionID {
 		return fmt.Errorf("ACP update for unexpected session %q", params.SessionId)
 	}
+	update := params.Update
+	providerOutputResumed := update.AgentMessageChunk != nil ||
+		update.AgentThoughtChunk != nil ||
+		update.ToolCall != nil ||
+		update.Plan != nil
+	// 사용자 턴이 없을 때 provider 가 스스로 낸 출력은 자율 턴으로 묶는다.
+	// 플래그가 꺼져 있으면 지금처럼 activeTurn 을 그대로 쓴다.
+	turnID, releaseTurn := c.bindProviderInitiatedTurn(providerOutputResumed)
+	defer releaseTurn()
 	sourceID := stableACPEventID(params.Meta)
 	sourceIndex := 0
 	emit := func(event ports.ChatEvent) {
@@ -605,11 +624,6 @@ func (c *conversation) processUpdate(params acpsdk.SessionNotification) error {
 		c.emit(event)
 	}
 
-	update := params.Update
-	providerOutputResumed := update.AgentMessageChunk != nil ||
-		update.AgentThoughtChunk != nil ||
-		update.ToolCall != nil ||
-		update.Plan != nil
 	if providerOutputResumed {
 		c.completeProviderFailure(turnID, emit)
 	}
