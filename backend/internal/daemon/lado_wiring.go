@@ -118,7 +118,7 @@ func wireLadoWork(ctx context.Context, cfg config.Config, store *sqlite.Store, p
 	if work.setup.sessions != nil {
 		sessionHooks = work.setup.sessions
 	}
-	watch := wireLadoWatch(cfg, store, ladoWatchHooks{sessions: sessionHooks, agents: work.setup.agents, reviewerEnv: work.setup.reviewerEnv}, work.accounts, work.sender, log)
+	watch := wireLadoWatch(cfg, store, ladoWatchHooks{sessions: sessionHooks, agents: work.setup.agents, reviewerEnv: work.setup.reviewerEnv}, work.accounts, work.sender, work.notifier, log)
 	rules := ladopolicy.New(ladopolicy.Deps{Store: store, Projects: store, Blobs: blobs, AOBuild: cfg.Telemetry.AppVersion, Setup: setup, Log: log})
 	setup.SetPolicy(rules)
 	// A failed seed leaves the permission ceiling missing, which resolves to

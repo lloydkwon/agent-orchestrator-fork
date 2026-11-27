@@ -442,7 +442,7 @@ func (m *Manager) mutate(ctx context.Context, id domain.SessionID, fn func(domai
 // just made stale. A session that stopped waiting on the user — because the
 // input arrived, or because the session ended — has nothing left to resolve.
 func needsInputResolutions(prev, next domain.SessionRecord, now time.Time) []ports.NotificationResolution {
-	if !prev.Activity.State.NeedsInput() {
+	if !prev.Activity.State.NeedsInput() && !endsLadoAwait(prev, next) {
 		return nil
 	}
 	if next.Activity.State.NeedsInput() && !next.IsTerminated {
@@ -453,6 +453,21 @@ func needsInputResolutions(prev, next domain.SessionRecord, now time.Time) []por
 		SessionID:  next.ID,
 		ResolvedAt: now,
 	}}
+}
+
+// endsLadoAwait reports whether a session outside the needs-input family
+// stopped waiting on its owner. LADO fork (2026-11-27): the LADO watch raises
+// a needs_input notification for a worker that rests idle after asking its
+// owner (ladowatch.watchAwaiting), so the owner answering (the next turn
+// starts) or the worker ending resolves it as leaving waiting_input would.
+// Resolving a session without an open notification changes nothing.
+func endsLadoAwait(prev, next domain.SessionRecord) bool {
+	if prev.IsTerminated || prev.Activity.State == domain.ActivityActive {
+		return false
+	}
+	started := next.Activity.State == domain.ActivityActive
+	exited := next.Activity.State == domain.ActivityExited && prev.Activity.State != domain.ActivityExited
+	return started || exited || next.IsTerminated
 }
 
 // ApplyRuntimeObservation only writes when runtime liveness is unambiguous. A

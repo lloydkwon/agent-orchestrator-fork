@@ -10036,6 +10036,7 @@ export interface components {
             text: string;
         };
         LadoWatchSettingsResolved: {
+            awaitMinutes: number;
             compactWindow: number;
             sessionCompactions: number;
             /** Format: int64 */
@@ -10063,6 +10064,8 @@ export interface components {
             values: components["schemas"]["LadoWatchSettingsValues"];
         };
         LadoWatchSettingsValues: {
+            /** @description How long a running worker may rest after its turn, without a report, before LADO tells the owner it waits on them with a needs_input notification. 0 tells only of a needs-input report. */
+            awaitMinutes: null | number;
             /** @description The token count Claude Code sessions of a project in LADO mode compact at (CLAUDE_CODE_AUTO_COMPACT_WINDOW), and Codex sessions' compact limit. */
             compactWindow: null | number;
             /** @description How many times one session may compact before LADO alerts. */
@@ -11789,6 +11792,8 @@ export interface components {
             model?: null | string;
         };
         UpdateLadoWatchSettingsRequest: {
+            /** @description How long a running worker may rest after its turn, without a report, before LADO tells the owner it waits on them with a needs_input notification. 0 tells only of a needs-input report. */
+            awaitMinutes: null | number;
             /** @description The token count Claude Code sessions of a project in LADO mode compact at (CLAUDE_CODE_AUTO_COMPACT_WINDOW), and Codex sessions' compact limit. */
             compactWindow: null | number;
             /** @description How many times one session may compact before LADO alerts. */

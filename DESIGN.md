@@ -161,6 +161,7 @@ Use one fixed status slot where status belongs. Prefer an icon/glyph over a pros
 | --- | --- | --- |
 | `active` | ⏳ | `--color-term-cyan` (mux's working cyan), regardless of PR state |
 | `waiting_input`, `blocked` | ❗ | `--color-status-needs-you`, regardless of PR state |
+| not `active`, with an open `needs_input` notification (a LADO worker idle after asking its owner) | ❗ | `--color-status-needs-you`, regardless of PR state |
 | `idle` (turn finished) | ✅, regardless of PR state | passive (default) |
 | `idle` with status `no_signal`, `exited`, `unknown`, none | the dot, in its board-section tone | passive (default) |
 

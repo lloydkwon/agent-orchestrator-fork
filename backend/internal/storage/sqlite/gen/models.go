@@ -1198,6 +1198,7 @@ type LadoWatchSetting struct {
 	StallMinutes       sql.NullInt64
 	WakeEnabled        sql.NullInt64
 	UpdatedAt          time.Time
+	AwaitMinutes       sql.NullInt64
 }
 
 type ModelUsageEvent struct {

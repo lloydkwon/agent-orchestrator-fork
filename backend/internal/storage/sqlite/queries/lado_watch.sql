@@ -4,7 +4,7 @@
 
 -- name: GetLadoWatchSettings :one
 SELECT project_id, compact_window, task_cost_cents, session_cost_cents, session_compactions,
-    stall_minutes, wake_enabled, updated_at
+    stall_minutes, wake_enabled, await_minutes, updated_at
 FROM lado_watch_settings
 WHERE project_id = ?;
 
@@ -12,8 +12,8 @@ WHERE project_id = ?;
 -- Writes a whole settings row; a NULL follows the row below it.
 INSERT INTO lado_watch_settings (
     project_id, compact_window, task_cost_cents, session_cost_cents, session_compactions,
-    stall_minutes, wake_enabled, updated_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    stall_minutes, wake_enabled, await_minutes, updated_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT (project_id) DO UPDATE SET
     compact_window = excluded.compact_window,
     task_cost_cents = excluded.task_cost_cents,
@@ -21,6 +21,7 @@ ON CONFLICT (project_id) DO UPDATE SET
     session_compactions = excluded.session_compactions,
     stall_minutes = excluded.stall_minutes,
     wake_enabled = excluded.wake_enabled,
+    await_minutes = excluded.await_minutes,
     updated_at = excluded.updated_at;
 
 -- name: EnsureLadoSessionWatch :execrows

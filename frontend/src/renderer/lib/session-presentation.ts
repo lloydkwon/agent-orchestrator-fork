@@ -125,11 +125,24 @@ const MUX_STATE_SYMBOLS = { working: "⏳", needs_you: "❗", done: "✅" } as c
 // 터미널 청록, 기다림은 빨강, 끝난 행은 흐린 기본색이다(눈의 피로).
 // 활동을 모르면(옛 데몬, exited, unknown) 점 그대로다. no_signal 도 점이다 — 데몬이 신호 없이 유예가 지난
 // 세션을 «확신 있는 idle» 로 말하지 않으려고 낮춘 상태인데 activity 는 idle 로 남아 있다.
+export type SessionStatusGlyphOptions = {
+	/**
+	 * The session has an open needs_input notification. The LADO watch raises one for a worker
+	 * that rests idle after asking its owner (2026-11-27), so the warning shows without
+	 * waiting_input. A working session keeps ⏳: it already got its answer.
+	 */
+	awaitingOwner?: boolean;
+};
+
 export function getSessionStatusGlyphView(
 	session: SessionToneInput,
 	t: TFunction = appI18n.t,
+	options: SessionStatusGlyphOptions = {},
 ): SessionStatusGlyphView {
 	const state = session.activity?.state;
+	if (options.awaitingOwner && state !== "active") {
+		return { glyph: "needs_you", symbol: MUX_STATE_SYMBOLS.needs_you, dotClassName: "", ageClassName: "text-status-needs-you" };
+	}
 	if (state === "active") {
 		return { glyph: "working", symbol: MUX_STATE_SYMBOLS.working, dotClassName: "", ageClassName: "text-[var(--color-term-cyan)]" };
 	}

@@ -77,6 +77,8 @@ import { openRemoteOrchestrator } from "../lib/remote-orchestrator";
 import { projectNavigateTarget, sessionNavigateTarget } from "../lib/navigate-to-session";
 import { sessionUiKey } from "../lib/hosts";
 import { buildSidebarSessionOrder, sessionWantsAttention, stepSessionNav, type SidebarNavSession } from "../lib/sidebar-order";
+import { selectAwaitingOwnerSessionIds } from "../hooks/useAwaitingOwner";
+import { awaitingOwnerQueryKey, type NotificationsPage } from "../lib/notifications";
 import { useSidebarOrderStore } from "../stores/sidebar-order-store";
 import { useAppShortcut } from "../hooks/useAppShortcut";
 import { recordManualWorkerOpen, recordSessionSurface } from "../lib/session-management-telemetry";
@@ -583,11 +585,18 @@ function ShellLayout() {
 		(direction: -1 | 1, onlyNeedingAttention = false) => {
 			// The settings page owns these chords while it is open (they step its sections).
 			if (useUiStore.getState().settingsModal?.scope === "global") return;
+			// LADO fork: a worker idle after asking its owner wants attention too (hooks/useAwaitingOwner.ts).
+			const awaitingOwner = selectAwaitingOwnerSessionIds(
+				queryClient.getQueryData<NotificationsPage>(awaitingOwnerQueryKey),
+			);
 			const target = stepSessionNav(
 				sidebarSessionOrder(),
 				{ sessionId: routeParams.sessionId, hostId: routeParams.hostId },
 				direction,
-				onlyNeedingAttention ? (entry) => sessionWantsAttention(entry.session) : undefined,
+				onlyNeedingAttention
+					? (entry) =>
+							sessionWantsAttention(entry.session) || (!entry.hostId && awaitingOwner.has(entry.sessionId))
+					: undefined,
 			);
 			if (target) {
 				openNavSession(target);
@@ -595,7 +604,7 @@ function ShellLayout() {
 				useUiStore.getState().showGlobalToast(t("shortcut.noAttentionSessions"));
 			}
 		},
-		[openNavSession, routeParams.hostId, routeParams.sessionId, sidebarSessionOrder, t],
+		[openNavSession, queryClient, routeParams.hostId, routeParams.sessionId, sidebarSessionOrder, t],
 	);
 
 	const updateWorkspaces = useCallback(

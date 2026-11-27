@@ -34,7 +34,7 @@ type Store interface {
 	LiveLadoExecutions(ctx context.Context) ([]domain.LadoExecution, error)
 	LadoExecution(ctx context.Context, sessionID domain.SessionID) (domain.LadoExecution, bool, error)
 	LadoTask(ctx context.Context, id domain.LadoTaskID) (domain.LadoTask, bool, error)
-	LatestSessionReport(ctx context.Context, sessionID domain.SessionID) (domain.ReportState, string, bool, error)
+	LatestSessionReportAt(ctx context.Context, sessionID domain.SessionID) (domain.ReportState, time.Time, bool, error)
 	LadoEffectiveWatchSettings(ctx context.Context, project domain.ProjectID) (domain.LadoWatchSettings, error)
 
 	EnsureLadoSessionWatch(ctx context.Context, session domain.SessionID, task domain.LadoTaskID, at time.Time) (bool, error)
@@ -120,6 +120,8 @@ type Deps struct {
 	Messenger Messenger
 	// CompactCounter runs first on every tick; nil counts nothing.
 	CompactCounter CompactCounter
+	// Notifier tells the owner a worker waits on them; nil tells nothing.
+	Notifier Notifier
 	// Clock stamps changes; nil uses time.Now.
 	Clock func() time.Time
 	// Local is the time zone a Codex reset time is read in; nil uses
@@ -135,6 +137,10 @@ type Service struct {
 	mu sync.Mutex
 	// checks is the last read of each limited key's login.
 	checks map[string]*identityCheck
+	// awaiting is the turn of each worker the owner was told waits on them,
+	// and visited the workers this process watched once.
+	awaiting map[domain.SessionID]string
+	visited  map[domain.SessionID]bool
 }
 
 // New returns a Service.
@@ -148,7 +154,7 @@ func New(deps Deps) *Service {
 	if deps.Log == nil {
 		deps.Log = slog.Default()
 	}
-	return &Service{deps: deps, checks: map[string]*identityCheck{}}
+	return &Service{deps: deps, checks: map[string]*identityCheck{}, awaiting: map[domain.SessionID]string{}, visited: map[domain.SessionID]bool{}}
 }
 
 // Tick counts the compactions, releases the account limits whose reset
@@ -239,8 +245,10 @@ type worker struct {
 	turn    domain.ConversationTurn
 	hasTurn bool
 	watch   domain.LadoSessionWatch
-	// report is the session's last report state, "" without one.
-	report domain.ReportState
+	// report is the session's last report state, "" without one, and
+	// reportAt when it was made.
+	report   domain.ReportState
+	reportAt time.Time
 }
 
 // resting reports whether the worker finished its turn and waits: AO shows it
@@ -271,6 +279,7 @@ func (s *Service) watch(ctx context.Context, pass *tickPass, exec domain.LadoExe
 		return fmt.Errorf("read the session: %w", err)
 	}
 	if !found || rec.IsTerminated || rec.Activity.State == domain.ActivityExited {
+		s.forgetAwaiting(ctx, exec.SessionID, now)
 		return nil
 	}
 	w := worker{exec: exec, session: rec}
@@ -281,12 +290,12 @@ func (s *Service) watch(ctx context.Context, pass *tickPass, exec domain.LadoExe
 		return err
 	}
 	w.turn, w.hasTurn = s.latestTurn(ctx, exec.SessionID)
-	state, _, reported, err := s.deps.Store.LatestSessionReport(ctx, exec.SessionID)
+	state, reportAt, reported, err := s.deps.Store.LatestSessionReportAt(ctx, exec.SessionID)
 	if err != nil {
 		return fmt.Errorf("read the last report: %w", err)
 	}
 	if reported {
-		w.report = state
+		w.report, w.reportAt = state, reportAt
 	}
 	watch, ok, err := s.deps.Store.LadoSessionWatch(ctx, exec.SessionID)
 	if err != nil {
@@ -311,6 +320,7 @@ func (s *Service) watch(ctx context.Context, pass *tickPass, exec domain.LadoExe
 	if err := s.watchStall(ctx, &w, now); err != nil {
 		return fmt.Errorf("watch the stall: %w", err)
 	}
+	s.watchAwaiting(ctx, &w, now)
 	return nil
 }
 

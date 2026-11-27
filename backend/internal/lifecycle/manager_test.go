@@ -4334,6 +4334,70 @@ func TestActivity_LeavingNeedsInputResolvesNotification(t *testing.T) {
 	}
 }
 
+// LADO fork (2026-11-27): the LADO watch raises a needs_input notification
+// for a worker that rests idle after asking its owner. The owner answering
+// starts the next turn (active), and an exit ends the wait: both resolve it.
+// Going idle again, or staying active, has nothing to resolve.
+func TestActivity_LeavingIdleForWorkResolvesLadoAwaitNotification(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		prev    domain.ActivityState
+		next    domain.ActivityState
+		resolve bool
+	}{
+		{name: "answered after idle", prev: domain.ActivityIdle, next: domain.ActivityActive, resolve: true},
+		{name: "exited after idle", prev: domain.ActivityIdle, next: domain.ActivityExited, resolve: true},
+		{name: "still working", prev: domain.ActivityActive, next: domain.ActivityActive, resolve: false},
+		{name: "turn ended", prev: domain.ActivityActive, next: domain.ActivityIdle, resolve: false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			st := newFakeStore()
+			sink := &fakeNotificationSink{}
+			m := New(st, nil, WithNotificationSink(sink))
+			now := time.Date(2026, 11, 27, 10, 0, 0, 0, time.UTC)
+			m.clock = func() time.Time { return now }
+			st.sessions["lado-1"] = domain.SessionRecord{
+				ID: "lado-1", ProjectID: "water",
+				Activity:      domain.Activity{State: tt.prev, LastActivityAt: now.Add(-time.Minute)},
+				FirstSignalAt: now.Add(-time.Hour),
+			}
+			if err := m.ApplyActivitySignal(ctx, "lado-1", ports.ActivitySignal{Valid: true, State: tt.next}); err != nil {
+				t.Fatal(err)
+			}
+			if !tt.resolve {
+				if len(sink.resolutions) != 0 {
+					t.Fatalf("resolutions = %+v, want none", sink.resolutions)
+				}
+				return
+			}
+			if len(sink.resolutions) != 1 {
+				t.Fatalf("resolutions = %+v, want 1", sink.resolutions)
+			}
+			if got := sink.resolutions[0]; got.Type != domain.NotificationNeedsInput || got.SessionID != "lado-1" {
+				t.Fatalf("resolution = %+v", got)
+			}
+		})
+	}
+}
+
+// Terminating an idle worker ends a wait the LADO watch told of.
+func TestMarkTerminated_FromIdleResolvesNeedsInputNotification(t *testing.T) {
+	st := newFakeStore()
+	sink := &fakeNotificationSink{}
+	m := New(st, nil, WithNotificationSink(sink))
+	now := time.Now()
+	st.sessions["lado-1"] = domain.SessionRecord{
+		ID: "lado-1", ProjectID: "water",
+		Activity: domain.Activity{State: domain.ActivityIdle, LastActivityAt: now},
+	}
+	if err := m.MarkTerminated(ctx, "lado-1"); err != nil {
+		t.Fatal(err)
+	}
+	if len(sink.resolutions) != 1 || sink.resolutions[0].Type != domain.NotificationNeedsInput {
+		t.Fatalf("resolutions = %+v", sink.resolutions)
+	}
+}
+
 // An in-family escalation is still the same pause: nothing was answered, so
 // there is nothing to resolve.
 func TestActivity_WaitingInputToBlockedDoesNotResolve(t *testing.T) {

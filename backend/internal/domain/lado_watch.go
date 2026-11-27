@@ -35,10 +35,17 @@ type LadoWatchSettings struct {
 	// WakeEnabled lets LADO send its two wake messages to the project's
 	// workers.
 	WakeEnabled bool
+	// AwaitMinutes is how long a running worker may rest after its turn,
+	// without a report, before LADO tells the owner the worker waits on them
+	// (a needs_input notification). 0 tells only of a needs-input report.
+	AwaitMinutes int
 }
 
 // Stall is StallMinutes as a duration.
 func (s LadoWatchSettings) Stall() time.Duration { return time.Duration(s.StallMinutes) * time.Minute }
+
+// Await is AwaitMinutes as a duration; 0 when the quiet wait is off.
+func (s LadoWatchSettings) Await() time.Duration { return time.Duration(s.AwaitMinutes) * time.Minute }
 
 // LadoWatchOverrides is one settings row: the global row or a project's. A
 // nil field follows the row below it, the global row for a project and the
@@ -50,6 +57,7 @@ type LadoWatchOverrides struct {
 	SessionCompactions *int
 	StallMinutes       *int
 	WakeEnabled        *bool
+	AwaitMinutes       *int
 	UpdatedAt          time.Time
 }
 
@@ -61,6 +69,9 @@ const (
 	LadoDefaultSessionCompactions = 3
 	LadoDefaultStallMinutes       = 120
 	LadoDefaultWakeEnabled        = true
+	// LADO fork: owner's decision 2026-11-27 — a worker that rests ten
+	// minutes after a turn without reporting waits on the owner.
+	LadoDefaultAwaitMinutes = 10
 )
 
 // Ranges a settings value must fall in. The compact window range is Claude
@@ -74,6 +85,8 @@ const (
 	LadoMaxSessionCompactions = 100
 	LadoMinStallMinutes       = 10
 	LadoMaxStallMinutes       = 7 * 24 * 60
+	LadoMinAwaitMinutes       = 0
+	LadoMaxAwaitMinutes       = 7 * 24 * 60
 )
 
 // LadoWatchDefaults are the settings without any row.
@@ -85,6 +98,7 @@ func LadoWatchDefaults() LadoWatchSettings {
 		SessionCompactions: LadoDefaultSessionCompactions,
 		StallMinutes:       LadoDefaultStallMinutes,
 		WakeEnabled:        LadoDefaultWakeEnabled,
+		AwaitMinutes:       LadoDefaultAwaitMinutes,
 	}
 }
 
@@ -125,6 +139,11 @@ func (o LadoWatchOverrides) Validate() error {
 			return err
 		}
 	}
+	if o.AwaitMinutes != nil {
+		if err := check("awaitMinutes", int64(*o.AwaitMinutes), LadoMinAwaitMinutes, LadoMaxAwaitMinutes); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -154,6 +173,9 @@ func (o LadoWatchOverrides) applyValid(s LadoWatchSettings) LadoWatchSettings {
 	}
 	if o.WakeEnabled != nil {
 		s.WakeEnabled = *o.WakeEnabled
+	}
+	if o.AwaitMinutes != nil && (LadoWatchOverrides{AwaitMinutes: o.AwaitMinutes}).Validate() == nil {
+		s.AwaitMinutes = *o.AwaitMinutes
 	}
 	return s
 }

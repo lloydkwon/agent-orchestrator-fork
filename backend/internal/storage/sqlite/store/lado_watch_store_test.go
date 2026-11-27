@@ -46,7 +46,7 @@ func TestLadoWatchSettingsLayerAndRefuseOutOfRange(t *testing.T) {
 		t.Fatalf("put global row: %v", err)
 	}
 	if err := s.PutLadoWatchSettings(ctx, "mer", domain.LadoWatchOverrides{
-		CompactWindow: intp(150_000), StallMinutes: intp(30), WakeEnabled: boolp(true),
+		CompactWindow: intp(150_000), StallMinutes: intp(30), WakeEnabled: boolp(true), AwaitMinutes: intp(0),
 	}); err != nil {
 		t.Fatalf("put project row: %v", err)
 	}
@@ -58,12 +58,15 @@ func TestLadoWatchSettingsLayerAndRefuseOutOfRange(t *testing.T) {
 	want := domain.LadoWatchSettings{
 		CompactWindow: 150_000, TaskCostCents: 50_00, SessionCostCents: domain.LadoDefaultSessionCostCents,
 		SessionCompactions: domain.LadoDefaultSessionCompactions, StallMinutes: 30, WakeEnabled: true,
+		// 0 is stored as 0, not as "follow the global row".
+		AwaitMinutes: 0,
 	}
 	if got, err := s.LadoEffectiveWatchSettings(ctx, "mer"); err != nil || got != want {
 		t.Fatalf("effective project settings = %+v, %v; want %+v", got, err, want)
 	}
 	// Another project follows the global row.
-	if got, err := s.LadoEffectiveWatchSettings(ctx, "other"); err != nil || got.CompactWindow != 300_000 || got.WakeEnabled {
+	if got, err := s.LadoEffectiveWatchSettings(ctx, "other"); err != nil || got.CompactWindow != 300_000 || got.WakeEnabled ||
+		got.AwaitMinutes != domain.LadoDefaultAwaitMinutes {
 		t.Fatalf("effective settings of a project without a row = %+v, %v", got, err)
 	}
 
@@ -74,6 +77,8 @@ func TestLadoWatchSettingsLayerAndRefuseOutOfRange(t *testing.T) {
 		"a negative session cost":        {SessionCostCents: centsp(-1)},
 		"zero compactions":               {SessionCompactions: intp(0)},
 		"a stall of one minute":          {StallMinutes: intp(1)},
+		"a negative await":               {AwaitMinutes: intp(-1)},
+		"an await over a week":           {AwaitMinutes: intp(domain.LadoMaxAwaitMinutes + 1)},
 	} {
 		if err := s.PutLadoWatchSettings(ctx, "mer", o); !errors.Is(err, domain.ErrLadoWatchSettingOutOfRange) {
 			t.Fatalf("%s: err = %v, want out of range", name, err)

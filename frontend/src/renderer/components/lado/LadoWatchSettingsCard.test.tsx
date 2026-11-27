@@ -19,6 +19,7 @@ const defaults: lado.LadoWatchSettingsResolved = {
 	sessionCompactions: 3,
 	stallMinutes: 120,
 	wakeEnabled: true,
+	awaitMinutes: 10,
 };
 
 const empty: lado.LadoWatchSettingsValues = {
@@ -28,6 +29,7 @@ const empty: lado.LadoWatchSettingsValues = {
 	sessionCompactions: null,
 	stallMinutes: null,
 	wakeEnabled: null,
+	awaitMinutes: null,
 };
 
 function settings(projectId: string, values: Partial<lado.LadoWatchSettingsValues>, inherited = defaults): lado.LadoWatchSettings {

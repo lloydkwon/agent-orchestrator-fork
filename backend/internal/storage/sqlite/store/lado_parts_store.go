@@ -451,6 +451,19 @@ func (s *Store) LatestSessionReport(ctx context.Context, sessionID domain.Sessio
 	return domain.ReportState(row.State), row.Note, true, nil
 }
 
+// LatestSessionReportAt is the state of a session's newest report and when
+// it was made; ok is false without a report.
+func (s *Store) LatestSessionReportAt(ctx context.Context, sessionID domain.SessionID) (domain.ReportState, time.Time, bool, error) {
+	row, err := s.qr.LatestSessionReportAt(ctx, string(sessionID))
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", time.Time{}, false, nil
+	}
+	if err != nil {
+		return "", time.Time{}, false, fmt.Errorf("read the newest report of session %s: %w", sessionID, err)
+	}
+	return domain.ReportState(row.State), row.CreatedAt.UTC(), true, nil
+}
+
 func ladoPartRunFromGen(row gen.LadoPartRun) domain.LadoPartRun {
 	var ahead *int
 	if row.BaseCommitsAhead.Valid {

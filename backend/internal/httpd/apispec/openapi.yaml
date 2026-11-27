@@ -28529,6 +28529,8 @@ components:
       type: object
     LadoWatchSettingsResolved:
       properties:
+        awaitMinutes:
+          type: integer
         compactWindow:
           type: integer
         sessionCompactions:
@@ -28550,6 +28552,7 @@ components:
       - sessionCompactions
       - stallMinutes
       - wakeEnabled
+      - awaitMinutes
       type: object
     LadoWatchSettingsResponse:
       properties:
@@ -28584,6 +28587,15 @@ components:
       type: object
     LadoWatchSettingsValues:
       properties:
+        awaitMinutes:
+          description: How long a running worker may rest after its turn, without
+            a report, before LADO tells the owner it waits on them with a needs_input
+            notification. 0 tells only of a needs-input report.
+          maximum: 10080
+          minimum: 0
+          type:
+          - "null"
+          - integer
         compactWindow:
           description: The token count Claude Code sessions of a project in LADO mode
             compact at (CLAUDE_CODE_AUTO_COMPACT_WINDOW), and Codex sessions' compact
@@ -28637,6 +28649,7 @@ components:
       - sessionCompactions
       - stallMinutes
       - wakeEnabled
+      - awaitMinutes
       type: object
     LinkPreviewResponse:
       properties:
@@ -33013,6 +33026,15 @@ components:
       type: object
     UpdateLadoWatchSettingsRequest:
       properties:
+        awaitMinutes:
+          description: How long a running worker may rest after its turn, without
+            a report, before LADO tells the owner it waits on them with a needs_input
+            notification. 0 tells only of a needs-input report.
+          maximum: 10080
+          minimum: 0
+          type:
+          - "null"
+          - integer
         compactWindow:
           description: The token count Claude Code sessions of a project in LADO mode
             compact at (CLAUDE_CODE_AUTO_COMPACT_WINDOW), and Codex sessions' compact
@@ -33066,6 +33088,7 @@ components:
       - sessionCompactions
       - stallMinutes
       - wakeEnabled
+      - awaitMinutes
       type: object
     UpdateProjectSettingsInput:
       properties:

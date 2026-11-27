@@ -237,17 +237,29 @@ func (q *Queries) GetLadoSessionWatch(ctx context.Context, sessionID string) (La
 const getLadoWatchSettings = `-- name: GetLadoWatchSettings :one
 
 SELECT project_id, compact_window, task_cost_cents, session_cost_cents, session_compactions,
-    stall_minutes, wake_enabled, updated_at
+    stall_minutes, wake_enabled, await_minutes, updated_at
 FROM lado_watch_settings
 WHERE project_id = ?
 `
 
+type GetLadoWatchSettingsRow struct {
+	ProjectID          string
+	CompactWindow      sql.NullInt64
+	TaskCostCents      sql.NullInt64
+	SessionCostCents   sql.NullInt64
+	SessionCompactions sql.NullInt64
+	StallMinutes       sql.NullInt64
+	WakeEnabled        sql.NullInt64
+	AwaitMinutes       sql.NullInt64
+	UpdatedAt          time.Time
+}
+
 // LADO fork: worker watch (issue #42). Settings, the session watch, account
 // limits and alerts are migrations_lado/0012. Keep this file ASCII: sqlc
 // miscounts offsets after non-ASCII text.
-func (q *Queries) GetLadoWatchSettings(ctx context.Context, projectID string) (LadoWatchSetting, error) {
+func (q *Queries) GetLadoWatchSettings(ctx context.Context, projectID string) (GetLadoWatchSettingsRow, error) {
 	row := q.db.QueryRowContext(ctx, getLadoWatchSettings, projectID)
-	var i LadoWatchSetting
+	var i GetLadoWatchSettingsRow
 	err := row.Scan(
 		&i.ProjectID,
 		&i.CompactWindow,
@@ -256,6 +268,7 @@ func (q *Queries) GetLadoWatchSettings(ctx context.Context, projectID string) (L
 		&i.SessionCompactions,
 		&i.StallMinutes,
 		&i.WakeEnabled,
+		&i.AwaitMinutes,
 		&i.UpdatedAt,
 	)
 	return i, err
@@ -889,8 +902,8 @@ func (q *Queries) UpsertLadoAccountLimit(ctx context.Context, arg UpsertLadoAcco
 const upsertLadoWatchSettings = `-- name: UpsertLadoWatchSettings :exec
 INSERT INTO lado_watch_settings (
     project_id, compact_window, task_cost_cents, session_cost_cents, session_compactions,
-    stall_minutes, wake_enabled, updated_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    stall_minutes, wake_enabled, await_minutes, updated_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT (project_id) DO UPDATE SET
     compact_window = excluded.compact_window,
     task_cost_cents = excluded.task_cost_cents,
@@ -898,6 +911,7 @@ ON CONFLICT (project_id) DO UPDATE SET
     session_compactions = excluded.session_compactions,
     stall_minutes = excluded.stall_minutes,
     wake_enabled = excluded.wake_enabled,
+    await_minutes = excluded.await_minutes,
     updated_at = excluded.updated_at
 `
 
@@ -909,6 +923,7 @@ type UpsertLadoWatchSettingsParams struct {
 	SessionCompactions sql.NullInt64
 	StallMinutes       sql.NullInt64
 	WakeEnabled        sql.NullInt64
+	AwaitMinutes       sql.NullInt64
 	UpdatedAt          time.Time
 }
 
@@ -922,6 +937,7 @@ func (q *Queries) UpsertLadoWatchSettings(ctx context.Context, arg UpsertLadoWat
 		arg.SessionCompactions,
 		arg.StallMinutes,
 		arg.WakeEnabled,
+		arg.AwaitMinutes,
 		arg.UpdatedAt,
 	)
 	return err

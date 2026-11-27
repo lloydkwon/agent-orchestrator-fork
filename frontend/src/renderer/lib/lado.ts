@@ -932,6 +932,7 @@ export async function updateLadoWatchSettings(projectId: string | undefined, val
 		sessionCompactions: values.sessionCompactions,
 		stallMinutes: values.stallMinutes,
 		wakeEnabled: values.wakeEnabled,
+		awaitMinutes: values.awaitMinutes,
 	};
 	const { data, error } = projectId
 		? await apiClient.PUT("/api/v1/lado/projects/{projectId}/watch-settings", { params: { path: { projectId } }, body })

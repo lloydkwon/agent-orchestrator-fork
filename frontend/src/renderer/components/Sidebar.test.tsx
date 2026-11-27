@@ -2798,6 +2798,67 @@ describe("Sidebar", () => {
 		expect(mark).not.toHaveClass("bg-status-merged");
 	});
 
+	// LADO fork (2026-11-27): a worker that ended its turn with a question rests idle, and the LADO
+	// watch raises a needs_input notification for it. That open notification marks the row ❗.
+	it("marks an idle session waiting on its owner by an open needs_input notification", async () => {
+		const fallback = getMock.getMockImplementation();
+		getMock.mockImplementation((path: string) =>
+			path === "/api/v1/notifications"
+				? Promise.resolve({
+						data: {
+							notifications: [
+								{
+									id: "ntf-await",
+									type: "needs_input",
+									sessionId: "proj-1-lado-asking",
+									projectId: "proj-1",
+									prUrl: "",
+									title: "proj-1-lado-asking needs your input",
+									body: "",
+									status: "unread",
+									createdAt: "2026-11-27T01:00:00Z",
+									resolvedAt: null,
+									target: { kind: "session", sessionId: "proj-1-lado-asking" },
+								},
+							],
+							unreadCount: 1,
+							unresolvedCount: 1,
+						},
+						error: undefined,
+					})
+				: fallback?.(path),
+		);
+		renderSidebar({
+			workspaces: [
+				{
+					...workspace,
+					sessions: [
+						{
+							...session,
+							id: "proj-1-lado-asking",
+							title: "lado worker asking",
+							status: "idle",
+							activity: { state: "idle", lastActivityAt: "2026-11-27T00:50:00Z" },
+						},
+						{
+							...session,
+							id: "proj-1-lado-quiet",
+							title: "lado worker done",
+							status: "idle",
+							activity: { state: "idle", lastActivityAt: "2026-11-27T00:50:00Z" },
+						},
+					],
+				},
+			],
+		});
+
+		const mark = (title: string) =>
+			screen.getByLabelText(`Open ${title}`).querySelector<Element>("[data-session-status]");
+		await waitFor(() => expect(mark("lado worker asking")).toHaveAttribute("data-status-glyph", "needs_you"));
+		expect(mark("lado worker asking")).toHaveTextContent("❗");
+		expect(mark("lado worker done")).toHaveAttribute("data-status-glyph", "done");
+	});
+
 	it("shows the hourglass when an idle-section session has working activity", () => {
 		renderSidebar({
 			workspaces: [

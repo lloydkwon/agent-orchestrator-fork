@@ -51,6 +51,7 @@ import (
 	"github.com/aoagents/agent-orchestrator/backend/internal/preview"
 	"github.com/aoagents/agent-orchestrator/backend/internal/previewserver"
 	"github.com/aoagents/agent-orchestrator/backend/internal/push"
+	"github.com/aoagents/agent-orchestrator/backend/internal/push/ntfy"
 	"github.com/aoagents/agent-orchestrator/backend/internal/runfile"
 	agentsvc "github.com/aoagents/agent-orchestrator/backend/internal/service/agent"
 	"github.com/aoagents/agent-orchestrator/backend/internal/service/agentaccounts"
@@ -696,7 +697,7 @@ func Run() error {
 	// tasks track their issues until shutdown (docs/LJY-PRD/TDD.md §5.1).
 	lado := wireLadoWork(ctx, cfg, store, projectSvc, ladoWorkDeps{sender: sessMgr, artifacts: lcStack.ArtifactVersions, sessions: sessionSvc, branches: sessMgr, memory: memoryReader,
 		setup: ladoSetupDeps{folders: ladoFolders, sessions: sessMgr, agents: agents, knowledge: ladoKnowledge}, reviews: reviewSvc, ladoModes: ladoProjects,
-		accounts: agentAccountSvc, preflight: agentSvc, claims: sessionSvc}, log)
+		accounts: agentAccountSvc, preflight: agentSvc, claims: sessionSvc, notifier: notificationWriter}, log)
 	ladoConnections, ladoTasks, ladoRules, ladoQueue, ladoSetup, ladoVerify := lado.connections, lado.tasks, lado.rules, lado.queue, lado.setup, lado.verify
 	ladoTasksDone := ladoTasks.Start(ctx)
 	ladoSetupDone := startLadoSetup(ctx, ladoSetup, log)
@@ -1001,6 +1002,14 @@ func Run() error {
 	if pushDevices != nil && hostIdentity.HostID != "" {
 		dispatcher := push.NewDispatcher(notificationHub, pushDevices, push.NewExpoClient(os.Getenv("EXPO_ACCESS_TOKEN")), hostIdentity.HostID, log)
 		go dispatcher.Run(ctx)
+	}
+	// LADO fork (2026-11-27): what needs the owner also goes to their ntfy
+	// topic when <data dir>/ntfy.json names one. Without the file nothing
+	// goes; a file that is wrong is logged and leaves it off.
+	if ntfyCfg, ok, err := ntfy.LoadConfig(cfg.DataDir); err != nil {
+		log.Warn("ntfy push is off: its config is wrong", "error", err)
+	} else if ok {
+		go ntfy.New(ntfyCfg, ntfy.Deps{Alerts: store, Tasks: store, Log: log}).Run(ctx, notificationHub)
 	}
 	if mobilebridge.KeepAwakeSupported() {
 		ka := mobilebridge.NewKeepAwake(os.Getpid())

@@ -2,7 +2,8 @@
 // project's overrides in one card. The compact window LADO gives the Claude
 // Code sessions of its projects, the cost and compaction thresholds past
 // which it alerts, how long a worker may rest before it counts as stalled,
-// and whether LADO sends its two wake messages. A project's value can follow
+// whether LADO sends its two wake messages, and how long a worker may rest
+// after its turn before LADO tells the owner it waits on them. A project's value can follow
 // the global one, and the global one the built-in default. The values reach
 // sessions as they start, so a change applies from the next run.
 import { useState } from "react";
@@ -25,6 +26,7 @@ const choices: Record<NumberSetting, readonly number[]> = {
 	sessionCostCents: [5_00, 10_00, 20_00, 30_00, 50_00, 100_00],
 	sessionCompactions: [1, 2, 3, 4, 5, 8, 10],
 	stallMinutes: [30, 60, 120, 180, 240, 480],
+	awaitMinutes: [0, 5, 10, 15, 30, 60],
 };
 
 /** The menu value of a null setting, which follows what the scope inherits. */
@@ -36,6 +38,7 @@ const labelKeys = {
 	sessionCostCents: "lado.watch.sessionCost",
 	sessionCompactions: "lado.watch.sessionCompactions",
 	stallMinutes: "lado.watch.stall",
+	awaitMinutes: "lado.watch.await",
 	wakeEnabled: "lado.watch.wake",
 } as const satisfies Record<WatchSetting, string>;
 
@@ -45,6 +48,7 @@ const hintKeys = {
 	sessionCostCents: "lado.watch.sessionCostHint",
 	sessionCompactions: "lado.watch.sessionCompactionsHint",
 	stallMinutes: "lado.watch.stallHint",
+	awaitMinutes: "lado.watch.awaitHint",
 	wakeEnabled: "lado.watch.wakeHint",
 } as const satisfies Record<WatchSetting, string>;
 
@@ -54,6 +58,7 @@ const settingOrder: readonly WatchSetting[] = [
 	"sessionCostCents",
 	"sessionCompactions",
 	"stallMinutes",
+	"awaitMinutes",
 	"wakeEnabled",
 ];
 
@@ -130,8 +135,10 @@ function WatchRows({ projectId }: { projectId?: string }) {
 				return ladoCentsText(Number(value), locale);
 			case "sessionCompactions":
 				return t("lado.watch.times", { times: Number(value) });
-			case "stallMinutes": {
+			case "stallMinutes":
+			case "awaitMinutes": {
 				const minutes = Number(value);
+				if (minutes === 0) return t("lado.watch.awaitOff");
 				return minutes % 60 === 0 ? t("lado.watch.hours", { hours: minutes / 60 }) : t("lado.watch.minutes", { minutes });
 			}
 			case "wakeEnabled":

@@ -228,6 +228,29 @@ describe("session presentation", () => {
 				),
 			).toEqual(dot("bg-status-in-review"));
 		});
+
+		// LADO fork (2026-11-27): a worker that rests idle after asking its owner has an open
+		// needs_input notification from the LADO watch; it shows the warning like waiting_input.
+		it("warns for an idle session that waits on its owner", () => {
+			const idle = sessionWith({ status: "idle", scmStatus: "pr_open", activity: { state: "idle", lastActivityAt: at } });
+			expect(getSessionStatusGlyphView(idle, undefined, { awaitingOwner: true })).toEqual({
+				glyph: "needs_you",
+				symbol: "❗",
+				dotClassName: "",
+				ageClassName: "text-status-needs-you",
+			});
+			expect(getSessionStatusGlyphView(idle, undefined, { awaitingOwner: false }).glyph).toBe("done");
+		});
+
+		it("keeps ⏳ once the awaited session works again", () => {
+			expect(
+				getSessionStatusGlyphView(
+					sessionWith({ status: "working", activity: { state: "active", lastActivityAt: at } }),
+					undefined,
+					{ awaitingOwner: true },
+				).glyph,
+			).toBe("working");
+		});
 	});
 
 	it("paints a closed-without-merge session red", () => {

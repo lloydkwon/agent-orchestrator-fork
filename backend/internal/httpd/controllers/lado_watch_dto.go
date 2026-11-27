@@ -14,6 +14,7 @@ type LadoWatchSettingsValues struct {
 	SessionCompactions *int   `json:"sessionCompactions" minimum:"1" maximum:"100" description:"How many times one session may compact before LADO alerts."`
 	StallMinutes       *int   `json:"stallMinutes" minimum:"10" maximum:"10080" description:"How long a running worker may rest without a report before LADO takes it as stalled."`
 	WakeEnabled        *bool  `json:"wakeEnabled" description:"Let LADO send its two fixed wake messages to the workers: the limit resume and the stall nudge."`
+	AwaitMinutes       *int   `json:"awaitMinutes" minimum:"0" maximum:"10080" description:"How long a running worker may rest after its turn, without a report, before LADO tells the owner it waits on them with a needs_input notification. 0 tells only of a needs-input report."`
 }
 
 // LadoWatchSettingsResolved is a settings row resolved: every value set.
@@ -24,6 +25,7 @@ type LadoWatchSettingsResolved struct {
 	SessionCompactions int   `json:"sessionCompactions"`
 	StallMinutes       int   `json:"stallMinutes"`
 	WakeEnabled        bool  `json:"wakeEnabled"`
+	AwaitMinutes       int   `json:"awaitMinutes"`
 }
 
 // LadoWatchSettingsResponse is one settings row, what its nulls follow and

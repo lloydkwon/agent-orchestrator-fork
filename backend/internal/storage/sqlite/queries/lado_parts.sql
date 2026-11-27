@@ -231,6 +231,16 @@ WHERE session_id = ?
 ORDER BY created_at DESC, id DESC
 LIMIT 1;
 
+-- name: LatestSessionReportAt :one
+-- The state of a session's newest report and when it was made (LADO fork:
+-- the worker watch takes a report as the current turn's only when it was
+-- made after that turn was asked for).
+SELECT state, created_at
+FROM reports
+WHERE session_id = ?
+ORDER BY created_at DESC, id DESC
+LIMIT 1;
+
 -- name: BumpLadoPartRunIntegrationAttempts :execrows
 -- Counts one more start of the integration worker, while it still has the
 -- count the caller read, and when a start that fails may be tried again.

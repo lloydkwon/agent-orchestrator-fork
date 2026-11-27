@@ -86,6 +86,10 @@ type ladoWorkDeps struct {
 	// #71): AO's session service. Without it the verification loop attaches
 	// none.
 	claims ladoPRClaims
+	// notifier tells the owner a worker waits on them (the worker watch's
+	// needs_input notification, 2026-11-27): AO's notification writer.
+	// Without it the watch tells nothing.
+	notifier ladowatch.Notifier
 }
 
 // ladoMessageSender is AO's session manager.
