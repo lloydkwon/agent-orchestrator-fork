@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/aoagents/agent-orchestrator/backend/internal/domain"
+	"github.com/aoagents/agent-orchestrator/backend/internal/ports"
 )
 
 // Store reads LADO's running executions and their tasks, and keeps what LADO
@@ -239,29 +240,48 @@ type worker struct {
 	task     domain.LadoTask
 	settings domain.LadoWatchSettings
 	session  domain.SessionRecord
-	// turn is the session's newest turn; hasTurn is false when it has none
-	// or its conversation could not be read.
+	// turn is the session's newest prompted turn, the turns the provider
+	// opened on its own left out: LADO tells the usage limit and the owner's
+	// Stop by it. hasTurn is false when it has none or its conversation could
+	// not be read.
 	turn    domain.ConversationTurn
 	hasTurn bool
-	watch   domain.LadoSessionWatch
+	// lastTurn is the session's newest turn, the provider's own included
+	// (issue #6: a Claude Code task-notification cycle opens one): LADO tells
+	// whether the worker rests and since when it is quiet by it. hasLastTurn
+	// is false when it has none or its conversation could not be read.
+	lastTurn    domain.ConversationTurn
+	hasLastTurn bool
+	watch       domain.LadoSessionWatch
 	// report is the session's last report state, "" without one.
 	report domain.ReportState
 }
 
 // resting reports whether the worker finished its turn and waits: AO shows it
-// idle or at its prompt, and its newest turn, queued ones included, is over.
-// A conversation LADO could not read is not resting.
+// idle or at its prompt, and its newest turn, queued ones and the provider's
+// own included, is over, and so is its newest prompted turn. A conversation
+// LADO could not read is not resting.
 func (w worker) resting() bool {
 	state := w.session.Activity.State
-	return (state == domain.ActivityIdle || state == domain.ActivityWaitingInput) && w.hasTurn && w.turn.State.Terminal()
+	if state != domain.ActivityIdle && state != domain.ActivityWaitingInput {
+		return false
+	}
+	// A prompted turn that is not over yet, though asked for before a later
+	// provider turn, still waits to run.
+	return w.hasLastTurn && w.lastTurn.State.Terminal() && (!w.hasTurn || w.turn.State.Terminal())
 }
 
-// ownerStopped reports whether the worker's newest turn was stopped or
-// withdrawn: the owner pressed Stop in Chat (interrupted) or took back a
-// queued turn (cancelled). LADO does not start such a worker again; it only
-// alerts.
+// ownerStopped reports whether the owner stopped the worker: its newest
+// prompted turn was stopped or withdrawn (the owner pressed Stop in Chat,
+// interrupted, or took back a queued turn, cancelled), or its newest turn is
+// a provider turn the owner stopped. A provider turn after a stopped prompted
+// turn does not undo the stop. LADO does not start such a worker again; it
+// only alerts.
 func (w worker) ownerStopped() bool {
-	return w.hasTurn && (w.turn.State == domain.TurnStateInterrupted || w.turn.State == domain.TurnStateCancelled)
+	if w.hasTurn && (w.turn.State == domain.TurnStateInterrupted || w.turn.State == domain.TurnStateCancelled) {
+		return true
+	}
+	return w.hasLastTurn && w.lastTurn.State == domain.TurnStateInterrupted && ports.IsProviderInitiatedTurn(w.lastTurn.ProviderTurnID)
 }
 
 // answering reports whether the worker's last report waits for the owner or
@@ -285,7 +305,7 @@ func (s *Service) watch(ctx context.Context, pass *tickPass, exec domain.LadoExe
 	if w.settings, err = s.settings(ctx, pass, w.task.ProjectID); err != nil {
 		return err
 	}
-	w.turn, w.hasTurn = s.latestTurn(ctx, exec.SessionID)
+	s.readTurns(ctx, &w)
 	state, _, reported, err := s.deps.Store.LatestSessionReport(ctx, exec.SessionID)
 	if err != nil {
 		return fmt.Errorf("read the last report: %w", err)
@@ -346,25 +366,38 @@ func (s *Service) settings(ctx context.Context, pass *tickPass, project domain.P
 	return settings, nil
 }
 
-// latestTurn reads the newest turn of the session's conversation. ok is false
-// when it has none or it could not be read, which keeps LADO quiet.
-func (s *Service) latestTurn(ctx context.Context, session domain.SessionID) (domain.ConversationTurn, bool) {
+// readTurns reads the worker's newest turn (lastTurn) and its newest prompted
+// turn (turn) from the session's conversation. A conversation that has no
+// turn, or that could not be read whole, gives neither, which keeps LADO
+// quiet; one with only the provider's own turns gives lastTurn alone.
+func (s *Service) readTurns(ctx context.Context, w *worker) {
 	if s.deps.Conversations == nil {
-		return domain.ConversationTurn{}, false
+		return
 	}
+	session := w.exec.SessionID
 	conv, err := s.deps.Conversations.ConversationForSession(ctx, session)
 	if err != nil {
 		s.deps.Log.Debug("LADO could not read a worker's conversation", "session", session, "err", err)
-		return domain.ConversationTurn{}, false
+		return
 	}
-	turn, err := s.deps.Conversations.LatestConversationTurn(ctx, conv.ID)
+	last, err := s.deps.Conversations.LatestConversationTurn(ctx, conv.ID)
 	if err != nil {
 		if !errors.Is(err, domain.ErrNoConversationTurn) {
 			s.deps.Log.Debug("LADO could not read a worker's newest turn", "session", session, "err", err)
 		}
-		return domain.ConversationTurn{}, false
+		return
 	}
-	return turn, true
+	prompted, err := s.deps.Conversations.LatestPromptedConversationTurn(ctx, conv.ID, ports.ProviderInitiatedTurnPrefix)
+	switch {
+	case err == nil:
+		w.turn, w.hasTurn = prompted, true
+	case errors.Is(err, domain.ErrNoConversationTurn):
+		// Only the provider's own turns: no limit or Stop to tell by.
+	default:
+		s.deps.Log.Debug("LADO could not read a worker's newest prompted turn", "session", session, "err", err)
+		return
+	}
+	w.lastTurn, w.hasLastTurn = last, true
 }
 
 // accountKey is the key of the account the worker's session runs on.
