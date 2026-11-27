@@ -239,3 +239,36 @@ func TestAwaitResolvesForAnEndedSession(t *testing.T) {
 		t.Fatalf("intents %+v, resolves %+v; want one of each", n.intents, n.resolves)
 	}
 }
+
+// A worker that reported in this turn what it is doing (a checkpoint: it
+// waits on its own long job) does not wait on its owner; one that reported
+// it is stuck does, at once. A checkpoint of an earlier turn says nothing of
+// the newest one.
+func TestAwaitReadsWhatThisTurnsReportSays(t *testing.T) {
+	wait := domain.LadoWatchDefaults().Await()
+
+	f := newFixture(t)
+	n := f.withNotifier()
+	f.store.reports[worker1] = domain.ReportCheckpoint
+	f.tick(t0.Add(wait + time.Hour))
+	if got, _ := n.counts(); got != 0 {
+		t.Fatalf("a worker that reported a checkpoint this turn was taken as waiting: %+v", n.intents)
+	}
+
+	f2 := newFixture(t)
+	n2 := f2.withNotifier()
+	f2.store.reports[worker1] = domain.ReportStuck
+	f2.tick(t0.Add(time.Minute))
+	if got, _ := n2.counts(); got != 1 {
+		t.Fatalf("a stuck report notified %d times, want 1 at once", got)
+	}
+
+	f3 := newFixture(t)
+	n3 := f3.withNotifier()
+	f3.store.reports[worker1] = domain.ReportCheckpoint
+	f3.store.reportsAt[worker1] = t0.Add(-time.Hour)
+	f3.tick(t0.Add(wait))
+	if got, _ := n3.counts(); got != 1 {
+		t.Fatalf("an earlier turn's checkpoint kept the owner from hearing: %d", got)
+	}
+}

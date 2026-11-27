@@ -37,25 +37,33 @@ func (w worker) reportedThisTurn() bool {
 
 // awaitingTurn is the turn the worker waits on its owner after, and whether
 // it does: it rests after a turn the owner did not stop, AO does not show it
-// waiting already, it is not at its usage limit and it did not say in this
-// turn that it is done; and it either asked in this turn's needs-input
-// report or stayed quiet for the project's await time.
+// waiting already and it is not at its usage limit; and it either asked in
+// this turn (a needs-input or stuck report) or stayed quiet, with no report
+// this turn, for the project's await time. A report of another kind this
+// turn says what the worker does: done, or a checkpoint while it waits on a
+// long job of its own (2026-11-27: a weather drill worker waited eight hours
+// on its runner after a checkpoint).
 func awaitingTurn(w worker, now time.Time) (string, bool) {
 	if w.session.Activity.State.NeedsInput() || w.watch.LimitState == domain.LadoLimitLimited ||
 		!stallWatched(w.exec.Role) || !w.resting() || w.ownerStopped() {
 		return "", false
 	}
-	current := w.reportedThisTurn()
-	if current && w.report == domain.ReportDone {
+	if w.reportedThisTurn() {
+		if w.asked() {
+			return w.turn.ID, true
+		}
 		return "", false
 	}
-	if !current || w.report != domain.ReportNeedsInput {
-		wait := w.settings.Await()
-		if wait <= 0 || now.Sub(quietSince(w)) < wait {
-			return "", false
-		}
+	wait := w.settings.Await()
+	if wait <= 0 || now.Sub(quietSince(w)) < wait {
+		return "", false
 	}
 	return w.turn.ID, true
+}
+
+// asked reports whether the worker's last report asks its owner.
+func (w worker) asked() bool {
+	return w.report == domain.ReportNeedsInput || w.report == domain.ReportStuck
 }
 
 // watchAwaiting tells the owner once per turn that the worker waits on them,
@@ -107,7 +115,7 @@ func (s *Service) watchAwaiting(ctx context.Context, w *worker, now time.Time) {
 		return
 	}
 	reason := "quiet"
-	if w.report == domain.ReportNeedsInput && w.reportedThisTurn() {
+	if w.reportedThisTurn() && w.asked() {
 		reason = "report"
 	}
 	s.audit(ctx, "lado.awaiting_owner", id, now, map[string]any{"task": w.task.ID, "turn": turn, "reason": reason})
