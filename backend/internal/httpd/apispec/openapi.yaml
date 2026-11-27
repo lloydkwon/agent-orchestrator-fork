@@ -22716,6 +22716,12 @@ components:
         planReview:
           $ref: '#/components/schemas/LadoPlanReviewSettings'
           description: When LADO skips the review of a plan worker's draft.
+        restoreOnStart:
+          description: At the daemon's start, start again the agent of each session
+            a reboot stopped, in its own worktree and conversation, and tell a LADO
+            worker whose turn was cut off to go on. Off leaves them stopped until
+            a person restores them.
+          type: boolean
         updatedAt:
           description: When the settings last changed; omitted while the defaults
             apply.
@@ -22732,6 +22738,7 @@ components:
       - maxWorkers
       - holdOnDiskLow
       - minFreeDiskGb
+      - restoreOnStart
       type: object
     LadoEffectiveAgentResponse:
       properties:
@@ -32854,6 +32861,10 @@ components:
           - integer
         planReview:
           $ref: '#/components/schemas/LadoPlanReviewSettings'
+        restoreOnStart:
+          type:
+          - "null"
+          - boolean
       required:
       - maxConcurrent
       - maxRunMinutes

@@ -152,3 +152,26 @@ func TestLadoAPI_DispatchSettingsWorkersAndDisk(t *testing.T) {
 		}
 	}
 }
+
+// Restoring the sessions a reboot stopped is on until the developer turns it
+// off; a change without restoreOnStart keeps it.
+func TestLadoAPI_DispatchSettingsRestoreOnStart(t *testing.T) {
+	store := sqlitetest.MustOpen(t)
+	srv := newLadoQueueServer(t, store)
+	body, _, _ := doRequest(t, srv, "GET", "/api/v1/lado/dispatch-settings", "")
+	if got := decodeLadoJSON[controllers.LadoDispatchSettingsResponse](t, body); !got.RestoreOnStart {
+		t.Fatalf("default = %+v, want restoreOnStart on", got)
+	}
+	body, status, _ := doRequest(t, srv, "PUT", "/api/v1/lado/dispatch-settings", `{"maxConcurrent":4,"maxRunMinutes":480,"holdOnMemoryTight":true,"restoreOnStart":false}`)
+	if got := decodeLadoJSON[controllers.LadoDispatchSettingsResponse](t, body); status != http.StatusOK || got.RestoreOnStart {
+		t.Fatalf("PUT off = %d %s", status, body)
+	}
+	body, _, _ = doRequest(t, srv, "PUT", "/api/v1/lado/dispatch-settings", `{"maxConcurrent":3,"maxRunMinutes":480,"holdOnMemoryTight":true}`)
+	if kept := decodeLadoJSON[controllers.LadoDispatchSettingsResponse](t, body); kept.RestoreOnStart || kept.MaxConcurrent != 3 {
+		t.Fatalf("a change without it = %+v, want it kept off", kept)
+	}
+	body, status, _ = doRequest(t, srv, "PUT", "/api/v1/lado/dispatch-settings", `{"maxConcurrent":3,"maxRunMinutes":480,"holdOnMemoryTight":true,"restoreOnStart":true}`)
+	if got := decodeLadoJSON[controllers.LadoDispatchSettingsResponse](t, body); status != http.StatusOK || !got.RestoreOnStart {
+		t.Fatalf("PUT on = %d %s", status, body)
+	}
+}

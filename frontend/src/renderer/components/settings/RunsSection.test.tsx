@@ -37,6 +37,7 @@ const defaults: lado.LadoDispatchSettings = {
 	maxWorkers: 6,
 	holdOnDiskLow: true,
 	minFreeDiskGb: 10,
+	restoreOnStart: true,
 };
 
 /** What a save sends: every value, the plan worker ones too. */
@@ -77,6 +78,7 @@ describe("RunsSection", () => {
 			maxWorkers: input.maxWorkers ?? defaults.maxWorkers,
 			holdOnDiskLow: input.holdOnDiskLow ?? defaults.holdOnDiskLow,
 			minFreeDiskGb: input.minFreeDiskGb ?? defaults.minFreeDiskGb,
+			restoreOnStart: input.restoreOnStart ?? defaults.restoreOnStart,
 			updatedAt: "2026-10-23T10:00:00Z",
 		}));
 	});
@@ -160,6 +162,19 @@ describe("RunsSection", () => {
 		await waitFor(() => expect(lado.updateLadoDispatchSettings).toHaveBeenLastCalledWith(sent({ maxWorkers: 9, minFreeDiskGb: 20, holdOnDiskLow: false })));
 		// Without the wait the threshold does not count.
 		await waitFor(() => expect(disk()).toBeDisabled());
+	});
+
+	it("restores sessions after a restart until the switch is turned off", async () => {
+		const user = userEvent.setup();
+		renderSection();
+
+		const restore = () => screen.getByRole("switch", { name: "Restore sessions after a restart" });
+		await waitFor(() => expect(restore()).toBeChecked());
+		expect(screen.getByText(/start again in their own conversations/)).toBeInTheDocument();
+
+		await user.click(restore());
+		await waitFor(() => expect(lado.updateLadoDispatchSettings).toHaveBeenLastCalledWith(sent({ restoreOnStart: false })));
+		await waitFor(() => expect(restore()).not.toBeChecked());
 	});
 
 	it("does not save a value that is already set", async () => {

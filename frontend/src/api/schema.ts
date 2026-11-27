@@ -7713,6 +7713,8 @@ export interface components {
             minFreeDiskGb: number;
             /** @description When LADO skips the review of a plan worker's draft. */
             planReview: components["schemas"]["LadoPlanReviewSettings"];
+            /** @description At the daemon's start, start again the agent of each session a reboot stopped, in its own worktree and conversation, and tell a LADO worker whose turn was cut off to go on. Off leaves them stopped until a person restores them. */
+            restoreOnStart: boolean;
             /**
              * Format: date-time
              * @description When the settings last changed; omitted while the defaults apply.
@@ -11744,6 +11746,7 @@ export interface components {
             maxWorkers?: null | number;
             minFreeDiskGb?: null | number;
             planReview?: components["schemas"]["LadoPlanReviewSettings"];
+            restoreOnStart?: null | boolean;
         };
         UpdateLadoLogSourceRequest: {
             displayName: string;

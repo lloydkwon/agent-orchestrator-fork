@@ -4,15 +4,16 @@
 // report and nudges it once, and tells the dispatcher and the plan workers
 // which accounts are at their limit, so no new worker starts on one.
 //
-// LADO sends a worker only its two fixed messages
-// (domain.LadoWakeLimitResumeText and domain.LadoWakeStallNudgeText), only
-// while the worker rests between turns, never in answer to a question it
+// LADO sends a worker only its three fixed messages
+// (domain.LadoWakeLimitResumeText, domain.LadoWakeStallNudgeText and, to a
+// worker the daemon started again after a reboot, domain.LadoWakeRestartResumeText,
+// restart.go), only while the worker rests between turns, never in answer to a question it
 // asked the owner, at most LadoWakeMaxResumes and LadoWakeMaxNudges times a
 // session, and only in a project that lets it. Every message is audited and
 // raises an alert.
 //
 // The daemon's one-minute watch loop runs Tick: the compaction counter first
-// (plan decision 10), then the limits, then the stalls.
+// (plan decision 10), then the limits, then the restarts, then the stalls.
 package ladowatch
 
 import (
@@ -154,6 +155,9 @@ type Service struct {
 	// and visited the workers this process watched once.
 	awaiting map[domain.SessionID]string
 	visited  map[domain.SessionID]bool
+	// restarts are the workers the daemon started again at its start with
+	// their turn cut off, and when it did (restart.go).
+	restarts map[domain.SessionID]time.Time
 }
 
 // New returns a Service.
@@ -167,7 +171,10 @@ func New(deps Deps) *Service {
 	if deps.Log == nil {
 		deps.Log = slog.Default()
 	}
-	return &Service{deps: deps, checks: map[string]*identityCheck{}, awaiting: map[domain.SessionID]string{}, visited: map[domain.SessionID]bool{}}
+	return &Service{
+		deps: deps, checks: map[string]*identityCheck{}, awaiting: map[domain.SessionID]string{}, visited: map[domain.SessionID]bool{},
+		restarts: map[domain.SessionID]time.Time{},
+	}
 }
 
 // Tick counts the compactions, releases the account limits whose reset
@@ -205,6 +212,7 @@ func (s *Service) Tick(ctx context.Context) error {
 			s.deps.Log.Warn("LADO could not watch a worker", "task", exec.TaskID, "session", exec.SessionID, "err", err)
 		}
 	}
+	s.expireRestarts(now)
 	return errors.Join(problems...)
 }
 
@@ -342,6 +350,9 @@ func (s *Service) watch(ctx context.Context, pass *tickPass, exec domain.LadoExe
 	if err := s.watchLimit(ctx, &w, now); err != nil {
 		return fmt.Errorf("watch the usage limit: %w", err)
 	}
+	if err := s.watchRestart(ctx, &w, now); err != nil {
+		return fmt.Errorf("watch the restart: %w", err)
+	}
 	if err := s.watchStall(ctx, &w, now); err != nil {
 		return fmt.Errorf("watch the stall: %w", err)
 	}
@@ -430,7 +441,7 @@ func (s *Service) accountKey(ctx context.Context, w worker) (string, bool) {
 	return domain.LadoAccountKey(w.session.Harness, accountID)
 }
 
-// send delivers one of LADO's two wake messages, and audits it.
+// send delivers one of LADO's wake messages, and audits it.
 func (s *Service) send(ctx context.Context, w worker, kind, text string, now time.Time, payload map[string]any) error {
 	if err := s.deps.Messenger.Send(ctx, w.session.ID, text); err != nil {
 		return fmt.Errorf("send the %s message: %w", kind, err)

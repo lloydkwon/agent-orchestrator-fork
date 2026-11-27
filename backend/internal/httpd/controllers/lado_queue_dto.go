@@ -214,6 +214,7 @@ type LadoDispatchSettingsResponse struct {
 	MaxWorkers        int                       `json:"maxWorkers" minimum:"1" maximum:"12" description:"How many LADO workers run at once across projects: single, part, merge and integration workers, apart from plan workers. maxConcurrent and the projects' caps count tasks."`
 	HoldOnDiskLow     bool                      `json:"holdOnDiskLow" description:"Keep new runs and parts waiting while the free disk space is under minFreeDiskGb."`
 	MinFreeDiskGB     int                       `json:"minFreeDiskGb" minimum:"1" maximum:"1000" description:"The free disk space, in gigabytes, under which new runs and parts wait."`
+	RestoreOnStart    bool                      `json:"restoreOnStart" description:"At the daemon's start, start again the agent of each session a reboot stopped, in its own worktree and conversation, and tell a LADO worker whose turn was cut off to go on. Off leaves them stopped until a person restores them."`
 	UpdatedAt         *time.Time                `json:"updatedAt,omitempty" description:"When the settings last changed; omitted while the defaults apply."`
 }
 
@@ -239,4 +240,5 @@ type UpdateLadoDispatchSettingsRequest struct {
 	MaxWorkers        *int                       `json:"maxWorkers,omitempty" minimum:"1" maximum:"12"`
 	HoldOnDiskLow     *bool                      `json:"holdOnDiskLow,omitempty"`
 	MinFreeDiskGB     *int                       `json:"minFreeDiskGb,omitempty" minimum:"1" maximum:"1000"`
+	RestoreOnStart    *bool                      `json:"restoreOnStart,omitempty"`
 }

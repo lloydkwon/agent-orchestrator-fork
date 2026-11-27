@@ -64,7 +64,8 @@ func (m *Manager) checkSessionHealth(ctx context.Context, rec domain.SessionReco
 		_, err = m.resumeChatController(ctx, "check session", rec, project,
 			workspaceInfo(rec), false, true, "", domain.SessionInterfaceTransitionHistoryStrict)
 		if errors.Is(err, ports.ErrChatHostNotRunning) {
-			return m.recordAgentExited(ctx, rec)
+			// LADO fork: may start it again (lado_startup_restore.go).
+			return m.agentMissingAtStartup(ctx, rec)
 		}
 		return err
 	}
@@ -81,7 +82,8 @@ func (m *Manager) checkSessionHealth(ctx context.Context, rec domain.SessionReco
 		// intact; its unverified identity will not qualify for native restore.
 		return nil
 	}
-	return m.recordAgentExited(ctx, rec)
+	// LADO fork: may start it again (lado_startup_restore.go).
+	return m.agentMissingAtStartup(ctx, rec)
 }
 
 // Setup's durable completion is written before any controller may launch.

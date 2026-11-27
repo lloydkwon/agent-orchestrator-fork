@@ -699,6 +699,9 @@ func Run() error {
 		setup: ladoSetupDeps{folders: ladoFolders, sessions: sessMgr, agents: agents, knowledge: ladoKnowledge}, reviews: reviewSvc, ladoModes: ladoProjects,
 		accounts: agentAccountSvc, preflight: agentSvc, claims: sessionSvc, notifier: notificationWriter}, log)
 	ladoConnections, ladoTasks, ladoRules, ladoQueue, ladoSetup, ladoVerify := lado.connections, lado.tasks, lado.rules, lado.queue, lado.setup, lado.verify
+	// LADO fork: sessions a reboot stopped start again at the startup health
+	// pass below (lado_startup_restore_wiring.go).
+	wireLadoStartupRestore(sessMgr, ladoQueue, lado.watch.watch, lcStack.LCM, log)
 	ladoTasksDone := ladoTasks.Start(ctx)
 	ladoSetupDone := startLadoSetup(ctx, ladoSetup, log)
 	reportSessions, ok := sessMgr.(reportSemanticSession)
