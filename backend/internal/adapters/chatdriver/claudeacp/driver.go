@@ -43,7 +43,13 @@ type claudeLaunchAuthenticator interface {
 // plugin. The plugin remains the canonical discovery/auth implementation for
 // both Chat and TUI modes.
 func New(plugin claudePlugin, log *slog.Logger, onAuthRejected func()) ports.ChatDriver {
-	return &checkpointDriver{plugin: plugin, ChatDriver: acpdriver.New(acpdriver.Config{
+	return &checkpointDriver{plugin: plugin, ChatDriver: acpdriver.New(buildConfig(plugin, log, onAuthRejected), log)}
+}
+
+// buildConfig 는 Claude Code 용 일반 ACP 드라이버 설정이다. 시험이 드라이버의
+// 시작 설정을 읽을 수 있게 New 에서 떼어 두었다.
+func buildConfig(plugin claudePlugin, log *slog.Logger, onAuthRejected func()) acpdriver.Config {
+	return acpdriver.Config{
 		Harness: domain.HarnessClaudeCode,
 		// A live rejection is the ground truth that outranks any cached
 		// verdict, so drop the cache the moment one arrives. This is also the
@@ -112,7 +118,7 @@ func New(plugin claudePlugin, log *slog.Logger, onAuthRejected func()) ports.Cha
 		SessionMeta:    claudeSessionMeta,
 		SessionMode:    claudeSessionMode,
 		SessionOptions: claudeSessionOptions,
-	}, log)}
+	}
 }
 
 func claudeCanHibernate(ctx context.Context, conn *acpsdk.ClientSideConnection, id acpsdk.SessionId) (bool, error) {
