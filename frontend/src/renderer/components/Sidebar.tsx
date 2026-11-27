@@ -20,13 +20,10 @@ import {
 	Archive,
 	CalendarClock,
 	ChevronRight,
-	CircleAlert,
-	CircleCheck,
 	Download,
 	File,
 	Folder,
 	FolderOpen,
-	LoaderCircle,
 	LogIn,
 	LogOut,
 	MoreVertical,
@@ -569,39 +566,30 @@ function useSelection() {
 	}), [goArtifacts, goAutomations, goConnectMobile, goGlobalSettings, goHome, goProject, goSession, goSettings, goStandaloneBoard, params.hostId, params.projectId, params.sessionId, pathname]);
 }
 
-const SESSION_STATUS_GLYPH_ICONS = {
-	working: LoaderCircle,
-	needs_you: CircleAlert,
-	done: CircleCheck,
-} as const;
-
-// LADO fork: 상태 칸 하나에 상태 하나 — 작업 중은 스피너, 사람 기다림은 경고, 끝난 턴은 체크가 점 자리를
-// 차지한다(mux 와 같은 규칙, 판정은 getSessionStatusGlyphView 한 곳). 칸 폭은 w-5(20px)로 고정해서 —
-// 예전 점의 px-1.5 + size-2 와 같은 폭이다 — 모양이 바뀌어도 제목과 «더 보기» 줄의 들여쓰기가 움직이지 않는다.
+// LADO fork: 상태 칸 하나에 상태 하나 — mux 처럼 ⏳ 작업 중, ❗ 사람 기다림, ✅ 끝난 턴이 점 자리를
+// 차지한다(판정은 getSessionStatusGlyphView 한 곳). 칸 폭은 w-5(20px)로 고정해서 — 예전 점의 px-1.5 + size-2 와
+// 같은 폭이다 — 이모지와 점이 바뀌어도 제목과 «더 보기» 줄의 들여쓰기가 움직이지 않는다.
 function SessionStatusDot({ session }: { session: WorkspaceSession }) {
 	const view = getSessionStatusGlyphView(session);
-	const Icon = view.glyph === "dot" ? null : SESSION_STATUS_GLYPH_ICONS[view.glyph];
 	return (
 		<span
 			aria-hidden="true"
 			className="relative z-[1] inline-flex w-5 shrink-0 items-center justify-center"
 		>
-			{Icon ? (
-				<Icon
-					className={cn(
-						"size-icon-sm shrink-0",
-						view.glyph === "working" && "animate-spin motion-reduce:animate-none",
-						view.className,
-					)}
-					data-session-status={session.status}
-					data-status-glyph={view.glyph}
-				/>
-			) : (
+			{view.glyph === "dot" ? (
 				<span
-					className={cn("size-2 rounded-full", view.className)}
+					className={cn("size-2 rounded-full", view.dotClassName)}
 					data-session-status={session.status}
 					data-status-glyph="dot"
 				/>
+			) : (
+				<span
+					className="text-xs leading-none"
+					data-session-status={session.status}
+					data-status-glyph={view.glyph}
+				>
+					{view.symbol}
+				</span>
 			)}
 		</span>
 	);
@@ -2579,10 +2567,13 @@ const SessionMessageAge = memo(function SessionMessageAge({ session }: { session
 	const { t } = useTranslation();
 	const at = session.lastInteractionAt ?? session.lastUserMessageAt;
 	if (!at) return null;
+	// LADO fork: mux 목록처럼 작업 중·기다림 행의 시간은 상태 색을 입는다(getSessionStatusGlyphView).
+	// cn(tailwind-merge)으로 합치지 않는다 — 사용자 정의 크기 text-micro 를 글자색으로 보고 색 클래스와 함께 지운다.
+	const ageClassName = getSessionStatusGlyphView(session).ageClassName || "text-passive";
 
 	return (
 		<time
-			className="absolute inset-y-0 right-2 z-[1] flex min-w-0 shrink-0 items-center whitespace-nowrap font-sans text-micro tabular-nums text-passive opacity-100 group-has-[:focus-visible]/session-row:opacity-0"
+			className={`absolute inset-y-0 right-2 z-[1] flex min-w-0 shrink-0 items-center whitespace-nowrap font-sans text-micro tabular-nums opacity-100 group-has-[:focus-visible]/session-row:opacity-0 ${ageClassName}`}
 			data-session-message-age=""
 			dateTime={at}
 			title={t("shell.lastMessageAt", { time: formatTimeCompact(at) })}
