@@ -43,6 +43,9 @@ type preparedTurn struct {
 	id              string
 	clientMessageID string
 	prompt          []acpsdk.ContentBlock
+	// closing 은 StartDeferredTurn 이 떼어 낸 자율 턴이다. runTurn 이 이 턴의
+	// TurnStarted 보다 먼저 닫는다.
+	closing *closingTurn
 }
 
 type interruptAttempt struct {
@@ -138,6 +141,16 @@ type conversation struct {
 	promptResponseFailure func(acpsdk.PromptResponse) error
 	hibernationCheck      func(context.Context, *acpsdk.ClientSideConnection, acpsdk.SessionId) (bool, error)
 	historyNotice         func(string) bool
+	// providerInitiatedTurns 와 providerInitiatedQuiet 은 Config 의 같은 이름
+	// 설정을 받는다. 자율 턴(provider 가 스스로 연 사이클)을 묶을지와, 마지막
+	// 갱신 뒤 얼마나 조용하면 닫을지를 정한다.
+	providerInitiatedTurns bool
+	providerInitiatedQuiet time.Duration
+	// autoTurn 은 열린 자율 턴이다. c.mu 가 지킨다.
+	autoTurn *providerInitiatedTurn
+	// turnEmitMu 는 자율 턴의 경계(열기, 닫기)와 다른 턴의 TurnStarted 가 겹치지
+	// 않게 줄 세운다. 잠금 순서는 turnEmitMu → c.mu 다. provider_initiated.go 참고.
+	turnEmitMu sync.Mutex
 	// preamble is standing context attached to the first prompt that actually
 	// reaches the provider. It is the delivery channel for agents that accept no
 	// system-prompt launch flag and ignore session/new _meta but do execute
@@ -422,6 +435,9 @@ func (c *conversation) ActivateLiveReconnect(ctx context.Context, providerTurnID
 			return fmt.Errorf("acknowledge committed persistent ACP result: %w", err)
 		}
 	}
+	// 자율 턴 상태는 여기서 건드리지 않는다. live reconnect 는 새 conversation 에서
+	// 일어나므로 autoTurn 이 아직 없다. 앞 daemon 이 열어 둔 자율 턴의 durable 행은
+	// chat service 의 reconnect 정리가 recovered 로 닫는다.
 	c.mu.Lock()
 	if durableBusy {
 		c.activeTurn = providerTurnID
@@ -644,6 +660,10 @@ func (c *conversation) setSessionOption(ctx context.Context, sessionID string, o
 }
 
 func (c *conversation) StartDeferredTurn(providerTurnID string) error {
+	// 자율 턴에 묶여 처리 중인 갱신이 끝날 때까지 기다린다. 그래야 그 갱신의
+	// 항목이 사용자 턴의 map 으로 넘어가지 않는다.
+	unlockBoundary := c.lockTurnBoundary()
+	defer unlockBoundary()
 	c.mu.Lock()
 	if c.closed {
 		c.mu.Unlock()
@@ -655,6 +675,8 @@ func (c *conversation) StartDeferredTurn(providerTurnID string) error {
 	}
 	turn := *c.prepared
 	c.prepared = nil
+	// 열린 자율 턴은 runTurn 이 사용자 TurnStarted 보다 먼저 닫는다.
+	turn.closing = c.takeProviderInitiatedTurnLocked()
 	// Standing context leads the first prompt so the provider reads it as
 	// context rather than as part of what the user asked. It is consumed here,
 	// not in SendTurn, because this is the first point at which a prompt is
@@ -671,13 +693,7 @@ func (c *conversation) StartDeferredTurn(providerTurnID string) error {
 	turnCtx, cancel := context.WithCancel(context.Background())
 	c.turnCancel = cancel
 	sessionID := c.sessionID
-	c.messages = make(map[string]string)
-	c.thoughts = make(map[string]string)
-	c.nestedMessages = make(map[string]nestedMessageState)
-	c.tools = make(map[string]*toolState)
-	c.turnDiffs = nil
-	c.turnDiffTurnID = ""
-	c.providerFailure = nil
+	c.resetTurnItemsLocked()
 	c.mu.Unlock()
 
 	go c.runTurn(turnCtx, sessionID, turn)
@@ -685,7 +701,12 @@ func (c *conversation) StartDeferredTurn(providerTurnID string) error {
 }
 
 func (c *conversation) runTurn(ctx context.Context, sessionID string, turn preparedTurn) {
+	// 떼어 낸 자율 턴의 TurnCompleted 가 이 턴의 TurnStarted 보다 먼저 나가야
+	// 두 턴이 겹쳐 열리지 않는다.
+	unlockBoundary := c.lockTurnBoundary()
+	c.emitClosingTurn(turn.closing, domain.TurnStateCompleted)
 	c.emit(ports.ChatEvent{Kind: ports.ChatEventTurnStarted, ProviderTurnID: turn.id})
+	unlockBoundary()
 	c.emit(ports.ChatEvent{Kind: ports.ChatEventControllerState, ControllerState: ports.ChatControllerBusy})
 	// ACP message ids are opaque idempotency/correlation keys. Preserve AO's
 	// durable client id when possible so an agent that echoes it from session/load
@@ -832,6 +853,10 @@ func (c *conversation) Compact(ctx context.Context) (ports.ChatCompactionResult,
 	if err := ctx.Err(); err != nil {
 		return ports.ChatCompactionResult{}, err
 	}
+	// StartDeferredTurn 과 같은 이유로 자율 턴에 묶인 갱신이 끝나길 기다린다.
+	// 경계는 TurnStarted 뒤에 바로 풀고, 일찍 끝나는 길은 defer 가 푼다.
+	unlockBoundary := sync.OnceFunc(c.lockTurnBoundary())
+	defer unlockBoundary()
 	c.mu.Lock()
 	if c.closed {
 		c.mu.Unlock()
@@ -852,6 +877,8 @@ func (c *conversation) Compact(ctx context.Context) (ports.ChatCompactionResult,
 	}
 	before := c.contextTokens
 	id := uuid.NewString()
+	// 열린 자율 턴은 compaction TurnStarted 보다 먼저 닫는다.
+	closing := c.takeProviderInitiatedTurnLocked()
 	c.activeTurn = id
 	c.compactingTurnID = id
 	c.compactionBefore = before
@@ -859,16 +886,12 @@ func (c *conversation) Compact(ctx context.Context) (ports.ChatCompactionResult,
 	c.settlingTurn = ""
 	turnCtx, cancel := context.WithCancel(context.Background())
 	c.turnCancel = cancel
-	c.messages = make(map[string]string)
-	c.thoughts = make(map[string]string)
-	c.nestedMessages = make(map[string]nestedMessageState)
-	c.tools = make(map[string]*toolState)
-	c.turnDiffs = nil
-	c.turnDiffTurnID = ""
-	c.providerFailure = nil
+	c.resetTurnItemsLocked()
 	c.mu.Unlock()
 
+	c.emitClosingTurn(closing, domain.TurnStateCompleted)
 	c.emit(ports.ChatEvent{Kind: ports.ChatEventTurnStarted, ProviderTurnID: id})
+	unlockBoundary()
 	c.emit(ports.ChatEvent{Kind: ports.ChatEventControllerState, ControllerState: ports.ChatControllerBusy})
 
 	go c.runCompactionTurn(turnCtx, sessionID, id)
@@ -968,6 +991,9 @@ func turnState(reason acpsdk.StopReason) domain.TurnState {
 }
 
 func (c *conversation) Interrupt(ctx context.Context, providerTurnID string) error {
+	if c.providerInitiatedTurns && c.interruptProviderInitiatedTurn(providerTurnID) {
+		return nil
+	}
 	c.mu.Lock()
 	active := c.activeTurn
 	sessionID := c.sessionID
@@ -1100,6 +1126,8 @@ func (c *conversation) closeProvider(terminate, closeSession bool) error {
 		c.mu.Lock()
 		c.closed = true
 		close(c.closing)
+		// 닫힌 대화에서는 자율 턴을 닫는 이벤트를 내지 않는다. 타이머만 멈춘다.
+		c.stopProviderInitiatedTurnLocked()
 		persistent := c.proc.terminate != nil
 		c.detaching = persistent && !terminate
 		cancel := c.turnCancel
@@ -1212,11 +1240,21 @@ func (c *conversation) emit(event ports.ChatEvent) {
 
 func (c *conversation) settleOpenItems(turnID string, turnState ...domain.TurnState) {
 	c.mu.Lock()
-	messages := c.messages
-	thoughts := c.thoughts
-	nestedMessages := c.nestedMessages
-	tools := c.tools
+	items := turnItems{
+		messages: c.messages, thoughts: c.thoughts,
+		nestedMessages: c.nestedMessages, tools: c.tools,
+	}
 	c.mu.Unlock()
+	c.settleTurnItems(turnID, items, turnState...)
+}
+
+// settleTurnItems 는 settleOpenItems 의 본체다. 자율 턴은 c.mu 아래에서 떼어 낸
+// 항목을 이 함수로 정리한다.
+func (c *conversation) settleTurnItems(turnID string, items turnItems, turnState ...domain.TurnState) {
+	messages := items.messages
+	thoughts := items.thoughts
+	nestedMessages := items.nestedMessages
+	tools := items.tools
 	recovered := len(turnState) > 0 && turnState[0] == domain.TurnStateRecovered
 	activityStatus := domain.ActivityStatusCompleted
 	if recovered {
@@ -1246,7 +1284,7 @@ func (c *conversation) settleOpenItems(turnID string, turnState ...domain.TurnSt
 	toolIDs := sortedKeys(tools)
 	for _, id := range toolIDs {
 		tool := tools[id]
-		if tool.status == acpsdk.ToolCallStatusPending || tool.status == acpsdk.ToolCallStatusInProgress || tool.status == "" {
+		if toolStillOpen(tool.status) {
 			snapshot := *tool
 			snapshot.status = acpsdk.ToolCallStatusFailed
 			event := c.toolEvent(turnID, &snapshot, true)
@@ -1257,6 +1295,17 @@ func (c *conversation) settleOpenItems(turnID string, turnState ...domain.TurnSt
 		}
 	}
 }
+
+// toolStillOpen 은 도구가 아직 끝나지 않은 상태(pending, in_progress, 상태 없음)인지
+// 알려 준다. settleOpenItems 가 실패로 닫을 도구와, 자율 턴의 닫힘을 막는 도구를
+// 같은 기준으로 고른다.
+func toolStillOpen(status acpsdk.ToolCallStatus) bool {
+	return status == acpsdk.ToolCallStatusPending || status == acpsdk.ToolCallStatusInProgress || status == ""
+}
+
+// defaultProviderInitiatedQuiet 은 Config.ProviderInitiatedQuiet 이 0 일 때 쓰는
+// 자율 턴의 조용한 시간이다.
+const defaultProviderInitiatedQuiet = 15 * time.Second
 
 func sortedKeys[T any](values map[string]T) []string {
 	keys := make([]string, 0, len(values))

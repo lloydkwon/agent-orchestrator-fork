@@ -404,6 +404,16 @@ func IsInternalContextResourceURI(uri string) bool {
 	return uri == ChatInternalReplayResourceURI || uri == ChatProjectMemoResourceURI
 }
 
+// ProviderInitiatedTurnPrefix 는 provider 가 사용자 프롬프트 없이 스스로 연
+// 사이클(예: Claude Code 의 <task-notification>)을 드라이버가 묶은 자율 턴의
+// ProviderTurnID 접두사다. 사용자 턴 id 는 이 접두사로 시작하지 않는다.
+const ProviderInitiatedTurnPrefix = "provider-initiated:"
+
+// IsProviderInitiatedTurn 은 id 가 드라이버가 만든 자율 턴의 id 인지 알려 준다.
+func IsProviderInitiatedTurn(id string) bool {
+	return len(id) > len(ProviderInitiatedTurnPrefix) && strings.HasPrefix(id, ProviderInitiatedTurnPrefix)
+}
+
 // ChatExcerptResourceURIPrefix identifies AO-verified transcript excerpts. The
 // daemon resolves these from durable messages; clients never supply the resource
 // text directly.
