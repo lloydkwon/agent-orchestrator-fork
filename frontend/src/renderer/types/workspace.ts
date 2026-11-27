@@ -197,6 +197,8 @@ export type WorkspaceSession = {
 	updatedAt: string;
 	/** ISO timestamp of the latest real user-authored message, when known. */
 	lastUserMessageAt?: string;
+	/** LADO fork: 최근 사용자 프롬프트를 한 줄로 접은 것. 스크래치패드 행의 둘째 줄에 쓴다(lib/session-detail). */
+	lastUserMessagePreview?: string;
 	/** ISO timestamp of human direction or deliberate same-project orchestrator direction. */
 	lastInteractionAt?: string;
 	isPinned?: boolean;

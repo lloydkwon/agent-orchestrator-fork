@@ -193,6 +193,7 @@ describe("useWorkspaceQuery", () => {
 								updatedAt: "2026-06-10T15:32:00Z",
 							},
 							lastUserMessageAt: "2026-06-10T16:10:00Z",
+							lastUserMessagePreview: "결제 화면의 환불 버튼 고치기",
 							updatedAt: "2026-06-10T16:15:04Z",
 						},
 						{
@@ -240,6 +241,7 @@ describe("useWorkspaceQuery", () => {
 			displayStatus: "Mergeable",
 			activity: { state: "idle", lastActivityAt: "2026-06-10T15:30:00Z" },
 			lastUserMessageAt: "2026-06-10T16:10:00Z",
+			lastUserMessagePreview: "결제 화면의 환불 버튼 고치기",
 			autoInjectReview: false,
 			autoInjectCI: false,
 		});
