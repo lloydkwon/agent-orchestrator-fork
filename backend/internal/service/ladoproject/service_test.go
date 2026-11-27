@@ -73,6 +73,15 @@ func (f *fakeStore) SetLadoMode(_ context.Context, projectID domain.ProjectID, o
 	return settings, nil
 }
 
+func (f *fakeStore) SetLadoModeAudited(ctx context.Context, projectID domain.ProjectID, on bool, event domain.LadoAuditEvent) (domain.LadoProjectSettings, error) {
+	settings, err := f.SetLadoMode(ctx, projectID, on, event.At)
+	if err != nil {
+		return settings, err
+	}
+	f.events = append(f.events, event)
+	return settings, nil
+}
+
 func (f *fakeStore) SetLadoModeWithProof(ctx context.Context, projectID domain.ProjectID, on bool, at time.Time, proof domain.LadoPresenceProof, event domain.LadoAuditEvent) (domain.LadoProjectSettings, error) {
 	if f.proofs[proof.Nonce] {
 		return domain.LadoProjectSettings{}, domain.ErrLadoPresenceReplayed
@@ -278,8 +287,15 @@ func TestModeSwitchNeedsNoDevFlag(t *testing.T) {
 	if err != nil {
 		t.Fatalf("turn LADO mode on: %v", err)
 	}
-	if !got.LadoMode || !got.UpdatedAt.Equal(now) || store.writes != 1 || len(store.events) != 0 {
+	if !got.LadoMode || !got.UpdatedAt.Equal(now) || store.writes != 1 || len(store.events) != 1 {
 		t.Fatalf("settings = %+v after %d writes and events %+v, want mode on at %s in one write", got, store.writes, store.events, now)
+	}
+	// Turning it on is audited as the API's (#4).
+	if on := store.events[0]; on.Action != "project.lado_mode_on" || on.Actor != "api" || on.SubjectKind != "project" || on.SubjectID != "mer" || !on.At.Equal(now) {
+		t.Fatalf("turn-on event = %+v, want project.lado_mode_on by api on project mer at %s", on, now)
+	}
+	if payload := auditPayload(t, store.events[0]); payload["from"] != false || payload["to"] != true {
+		t.Fatalf("turn-on payload = %v, want from false to true", payload)
 	}
 
 	// Turning it off still needs presence.
@@ -289,7 +305,7 @@ func TestModeSwitchNeedsNoDevFlag(t *testing.T) {
 		t.Fatalf("settings = %+v after %d writes, want mode still on", settings, store.writes)
 	}
 	got, err = svc.UpdateSettings(ctx, "mer", ladoproject.UpdateInput{LadoMode: boolPtr(false), Presence: presence("nonce-1")})
-	if err != nil || got.LadoMode || len(store.events) != 1 || store.events[0].Action != "project.lado_mode_off" {
+	if err != nil || got.LadoMode || len(store.events) != 2 || store.events[1].Action != "project.lado_mode_off" {
 		t.Fatalf("turn off with presence = %+v, %v, events %+v", got, err, store.events)
 	}
 
@@ -356,6 +372,64 @@ func TestLadoModeOnRefreshesProtection(t *testing.T) {
 		t.Fatalf("turn on without a hook: %v", err)
 	}
 	if len(told) != 2 {
+		t.Fatalf("told %v, want nothing more without a hook", told)
+	}
+}
+
+// Turning LADO mode on or off tells the session manager the project and the
+// new mode once the change is stored (#4), so the project's running
+// orchestrators get the instructions of that mode; a change that is refused,
+// not stored or changes nothing tells nobody.
+func TestLadoModeChangeTellsTheProjectAndTheMode(t *testing.T) {
+	ctx := context.Background()
+	store := &fakeStore{}
+	svc := newService(store)
+	type change struct {
+		project domain.ProjectID
+		on      bool
+	}
+	var told []change
+	svc.SetOnLadoModeChanged(func(id domain.ProjectID, on bool) { told = append(told, change{id, on}) })
+	update := func(id domain.ProjectID, in ladoproject.UpdateInput) error {
+		_, err := svc.UpdateSettings(ctx, id, in)
+		return err
+	}
+
+	if err := update("mer", ladoproject.UpdateInput{LadoMode: boolPtr(true)}); err != nil {
+		t.Fatalf("turn on: %v", err)
+	}
+	// Already on, and another change alone.
+	if err := update("mer", ladoproject.UpdateInput{LadoMode: boolPtr(true), MaxConcurrent: intPtr(2)}); err != nil {
+		t.Fatalf("change the cap: %v", err)
+	}
+	// Off without presence is refused; with it, it is stored.
+	requireAPIError(t, update("mer", ladoproject.UpdateInput{LadoMode: boolPtr(false)}), apierr.KindForbidden, "LADO_PRESENCE_REQUIRED")
+	if err := update("mer", ladoproject.UpdateInput{LadoMode: boolPtr(false), Presence: presence("nonce-1")}); err != nil {
+		t.Fatalf("turn off: %v", err)
+	}
+	if err := update("mer", ladoproject.UpdateInput{LadoMode: boolPtr(true)}); err != nil {
+		t.Fatalf("turn on again: %v", err)
+	}
+	// A replayed proof, an intake project and a failed write are not stored.
+	if err := update("mer", ladoproject.UpdateInput{LadoMode: boolPtr(false), Presence: presence("nonce-1")}); err == nil {
+		t.Fatal("a replayed proof turned LADO mode off")
+	}
+	requireAPIError(t, update("intake", ladoproject.UpdateInput{LadoMode: boolPtr(true)}), apierr.KindConflict, "LADO_TRACKER_INTAKE_ENABLED")
+	store.writeErr = errors.New("disk full")
+	requireAPIError(t, update("mer", ladoproject.UpdateInput{LadoMode: boolPtr(false), Presence: presence("nonce-2")}), apierr.KindInternal, "LADO_SETTINGS_UPDATE_FAILED")
+
+	want := []change{{"mer", true}, {"mer", false}, {"mer", true}}
+	if !slices.Equal(told, want) {
+		t.Fatalf("told %v, want %v", told, want)
+	}
+
+	// Without a hook nobody is told.
+	store.writeErr = nil
+	svc.SetOnLadoModeChanged(nil)
+	if err := update("mer", ladoproject.UpdateInput{LadoMode: boolPtr(false), Presence: presence("nonce-3")}); err != nil {
+		t.Fatalf("turn off without a hook: %v", err)
+	}
+	if !slices.Equal(told, want) {
 		t.Fatalf("told %v, want nothing more without a hook", told)
 	}
 }

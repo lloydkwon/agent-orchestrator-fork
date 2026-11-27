@@ -20,7 +20,9 @@ import (
 // Store reads and writes LADO's project settings.
 type Store interface {
 	LadoProjectSettings(ctx context.Context, projectID domain.ProjectID) (domain.LadoProjectSettings, error)
-	SetLadoMode(ctx context.Context, projectID domain.ProjectID, on bool, at time.Time) (domain.LadoProjectSettings, error)
+	// SetLadoModeAudited stores the mode with its audit event, for turning
+	// it on, which needs no presence proof.
+	SetLadoModeAudited(ctx context.Context, projectID domain.ProjectID, on bool, event domain.LadoAuditEvent) (domain.LadoProjectSettings, error)
 	SetLadoModeWithProof(ctx context.Context, projectID domain.ProjectID, on bool, at time.Time, proof domain.LadoPresenceProof, event domain.LadoAuditEvent) (domain.LadoProjectSettings, error)
 	SetLadoProjectMaxConcurrent(ctx context.Context, projectID domain.ProjectID, n int, event domain.LadoAuditEvent) error
 	// SetLadoProjectCheckCommands replaces the commands while they still
@@ -56,6 +58,9 @@ type Service struct {
 	deps Deps
 	// onLadoModeOn is told the project whose LADO mode was turned on.
 	onLadoModeOn atomic.Pointer[func(domain.ProjectID)]
+	// onLadoModeChanged is told the project whose LADO mode was turned on
+	// or off, and the new mode.
+	onLadoModeChanged atomic.Pointer[func(domain.ProjectID, bool)]
 }
 
 // New returns a Service.
@@ -76,6 +81,33 @@ func (s *Service) SetOnLadoModeOn(fn func(domain.ProjectID)) {
 		return
 	}
 	s.onLadoModeOn.Store(&fn)
+}
+
+// SetOnLadoModeChanged sets what is told, after the change is stored, the
+// project whose LADO mode a settings update turned on or off, and the new
+// mode: the session manager, which gives the project's running orchestrators
+// the instructions of the new mode (#4). A newly registered project is not
+// told; it has no orchestrator yet, and the first one reads the mode when it
+// starts. It must not block. nil tells nobody.
+func (s *Service) SetOnLadoModeChanged(fn func(domain.ProjectID, bool)) {
+	if fn == nil {
+		s.onLadoModeChanged.Store(nil)
+		return
+	}
+	s.onLadoModeChanged.Store(&fn)
+}
+
+// ladoModeChanged tells the hooks the project whose LADO mode is now on, or
+// now off.
+func (s *Service) ladoModeChanged(projectID domain.ProjectID, on bool) {
+	if on {
+		if fn := s.onLadoModeOn.Load(); fn != nil {
+			(*fn)(projectID)
+		}
+	}
+	if fn := s.onLadoModeChanged.Load(); fn != nil {
+		(*fn)(projectID, on)
+	}
 }
 
 // UpdateInput is a settings change. It needs at least one field; a nil
@@ -325,7 +357,8 @@ func checkCommandsPresence(projectID domain.ProjectID, presence func(action, sub
 }
 
 // setMode turns LADO mode on or off. Turning it on refuses while tracker
-// intake is on, because LADO projects take issues by import.
+// intake is on, because LADO projects take issues by import, and is audited as
+// the API's like the cap: nothing verifies who sent it.
 func (s *Service) setMode(ctx context.Context, project domain.ProjectRecord, on bool, in UpdateInput) (domain.LadoProjectSettings, error) {
 	projectID := domain.ProjectID(project.ID)
 	if !on {
@@ -335,13 +368,15 @@ func (s *Service) setMode(ctx context.Context, project domain.ProjectRecord, on 
 		return domain.LadoProjectSettings{}, apierr.Conflict("LADO_TRACKER_INTAKE_ENABLED",
 			"Turn off tracker intake for this project first: LADO projects take issues by import.", nil)
 	}
-	updated, err := s.deps.Store.SetLadoMode(ctx, projectID, true, s.deps.Clock())
+	// Nothing verifies who turned it on, so the event's actor is "api", as
+	// for the cap.
+	event := s.apiEvent(projectID, "project.lado_mode_on", 0, 0)
+	event.Payload, _ = json.Marshal(map[string]any{"from": false, "to": true})
+	updated, err := s.deps.Store.SetLadoModeAudited(ctx, projectID, true, event)
 	if err != nil {
 		return domain.LadoProjectSettings{}, apierr.Internal("LADO_SETTINGS_UPDATE_FAILED", "Failed to update LADO project settings")
 	}
-	if fn := s.onLadoModeOn.Load(); fn != nil {
-		(*fn)(projectID)
-	}
+	s.ladoModeChanged(projectID, true)
 	return updated, nil
 }
 
@@ -376,6 +411,7 @@ func (s *Service) turnOff(ctx context.Context, projectID domain.ProjectID, in Up
 	if err != nil {
 		return domain.LadoProjectSettings{}, apierr.Internal("LADO_SETTINGS_UPDATE_FAILED", "Failed to update LADO project settings")
 	}
+	s.ladoModeChanged(projectID, false)
 	return updated, nil
 }
 

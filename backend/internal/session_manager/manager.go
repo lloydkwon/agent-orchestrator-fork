@@ -471,10 +471,13 @@ type Manager struct {
 	openTranscriptFile func(string) (*os.File, error)
 	harnessUseGate     HarnessUseGate
 	// LADO fork: see lado_gate.go and lado_setup_home.go.
-	workGate      ports.WorkGate
-	ladoPrompt    LadoPromptSection
-	ladoSetupHome ports.LadoSetupHome
-	ladoChatMCP   LadoChatServers // see lado_setup_codex.go
+	workGate   ports.WorkGate
+	ladoPrompt LadoPromptSection
+	// LADO fork: orchestrators whose standing instructions wait to be built
+	// again, see instructions_refresh.go.
+	instructionRefresh instructionRefreshQueue
+	ladoSetupHome      ports.LadoSetupHome
+	ladoChatMCP        LadoChatServers // see lado_setup_codex.go
 	// LADO fork: Claude in Chrome launch value, see lado_launch_env.go.
 	ladoClaudeChrome LadoClaudeChrome
 	// LADO fork: worker watch launch values and plan folders, see
@@ -3059,24 +3062,36 @@ func (m *Manager) ExitAgent(ctx context.Context, id domain.SessionID) (domain.Se
 	if rec.Activity.State == domain.ActivityExited {
 		return domain.SessionRecord{}, fmt.Errorf("exit agent %s: %w", id, ErrAgentExited)
 	}
-	if err := m.releaseTerminalRuntime(ctx, rec); err != nil {
+	exited, err := m.stopAgentKeepingSession(ctx, rec)
+	if err != nil {
 		return domain.SessionRecord{}, fmt.Errorf("exit agent %s: %w", id, err)
+	}
+	return exited, nil
+}
+
+// stopAgentKeepingSession stops rec's agent controller and records the exit,
+// keeping the AO session, worktree, terminal identity and native conversation
+// for a later resume. The caller holds an exclusive agent operation and has
+// checked that the agent is live.
+func (m *Manager) stopAgentKeepingSession(ctx context.Context, rec domain.SessionRecord) (domain.SessionRecord, error) {
+	if err := m.releaseTerminalRuntime(ctx, rec); err != nil {
+		return domain.SessionRecord{}, err
 	}
 	if err := m.stopAgentController(ctx, rec); err != nil {
-		return domain.SessionRecord{}, fmt.Errorf("exit agent %s: %w", id, err)
+		return domain.SessionRecord{}, err
 	}
 	if err := m.recordAgentExited(ctx, rec); err != nil {
-		return domain.SessionRecord{}, fmt.Errorf("exit agent %s: record exit: %w", id, err)
+		return domain.SessionRecord{}, fmt.Errorf("record exit: %w", err)
 	}
-	exited, ok, err := m.store.GetSession(ctx, id)
+	exited, ok, err := m.store.GetSession(ctx, rec.ID)
 	if err != nil {
-		return domain.SessionRecord{}, fmt.Errorf("exit agent %s: confirm exit: %w", id, err)
+		return domain.SessionRecord{}, fmt.Errorf("confirm exit: %w", err)
 	}
 	if !ok {
-		return domain.SessionRecord{}, fmt.Errorf("exit agent %s: %w", id, ErrNotFound)
+		return domain.SessionRecord{}, ErrNotFound
 	}
 	if exited.Activity.State != domain.ActivityExited {
-		return domain.SessionRecord{}, fmt.Errorf("exit agent %s: %w", id, ErrSwitchSourceStopUnconfirmed)
+		return domain.SessionRecord{}, ErrSwitchSourceStopUnconfirmed
 	}
 	return exited, nil
 }

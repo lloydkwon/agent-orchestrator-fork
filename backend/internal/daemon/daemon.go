@@ -626,6 +626,8 @@ func Run() error {
 	ladoFolders := ladoDeviceFolders(codexHome)
 	ladoKnowledge := newLadoKnowledge(cfg, store, ladoFolders.claudeDir, log)
 	ladoProjects := wireLado(store, wiredSessMgr, chatSvc, ladoKnowledge, log)
+	// LADO fork (#4): live orchestrators take a changed LADO mode.
+	ladoInstructionRefresh := wireLadoInstructionRefresh(ladoProjects, wiredSessMgr, log)
 	agentAccountSvc := newAgentAccounts(cfg, store, codexHome, agentDeps.CodexAccounts, log)
 	if wired, ok := sessMgr.(interface {
 		SetAgentAccounts(ports.AgentAccountLaunchEnv)
@@ -1214,6 +1216,9 @@ func Run() error {
 				}
 			}
 		}()
+		if ladoInstructionRefresh != nil {
+			go ladoInstructionRefresh(ctx)
+		}
 	})
 
 	// Both graceful shutdown paths (SIGTERM and POST /shutdown) funnel through

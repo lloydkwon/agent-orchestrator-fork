@@ -61,6 +61,37 @@ func (s *Store) SetLadoMode(ctx context.Context, projectID domain.ProjectID, on 
 	return ladoProjectSettingsFromGen(row)
 }
 
+// SetLadoModeAudited stores the project's LADO mode with its audit event in
+// one transaction; the change takes the event's time. It is the change that
+// needs no presence proof, turning the mode on (SetLadoModeWithProof records
+// the proof that turning it off needs).
+func (s *Store) SetLadoModeAudited(ctx context.Context, projectID domain.ProjectID, on bool, event domain.LadoAuditEvent) (domain.LadoProjectSettings, error) {
+	if err := s.writeMu.LockContext(ctx); err != nil {
+		return domain.LadoProjectSettings{}, err
+	}
+	defer s.writeMu.Unlock()
+	var settings domain.LadoProjectSettings
+	err := s.inTx(ctx, "set LADO mode", func(q *gen.Queries) error {
+		row, err := q.UpsertLadoProjectSettings(ctx, gen.UpsertLadoProjectSettingsParams{
+			ProjectID: string(projectID),
+			LadoMode:  boolInt(on),
+			UpdatedAt: event.At.UTC(),
+		})
+		if err != nil {
+			return err
+		}
+		if settings, err = ladoProjectSettingsFromGen(row); err != nil {
+			return err
+		}
+		_, err = appendLadoAuditEventTx(ctx, q, event)
+		return err
+	})
+	if err != nil {
+		return domain.LadoProjectSettings{}, err
+	}
+	return settings, nil
+}
+
 // CreateLadoNewProjectSettings stores the settings a newly registered project
 // starts with (#3). It reports false and changes nothing when the project
 // already has a settings row, such as one kept from an earlier registration.
