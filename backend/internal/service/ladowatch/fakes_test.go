@@ -5,11 +5,13 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/aoagents/agent-orchestrator/backend/internal/domain"
+	"github.com/aoagents/agent-orchestrator/backend/internal/ports"
 	"github.com/aoagents/agent-orchestrator/backend/internal/storage/sqlite/store"
 )
 
@@ -327,34 +329,72 @@ func (f *fakeSessions) set(rec domain.SessionRecord) {
 	f.sessions[rec.ID] = rec
 }
 
+// fakeConversations keeps each session's turns in the order they were asked
+// for. set replaces them with one prompted turn; addProviderTurn adds a later
+// turn the provider opened on its own (issue #6).
 type fakeConversations struct {
 	mu    sync.Mutex
-	turns map[domain.SessionID]domain.ConversationTurn
+	turns map[domain.SessionID][]domain.ConversationTurn
 }
 
 func (f *fakeConversations) ConversationForSession(_ context.Context, s domain.SessionID) (domain.ConversationRecord, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if _, ok := f.turns[s]; !ok {
+	if len(f.turns[s]) == 0 {
 		return domain.ConversationRecord{}, store.ErrConversationNotFound
 	}
 	return domain.ConversationRecord{ID: "conv-" + string(s)}, nil
 }
 
 func (f *fakeConversations) LatestConversationTurn(_ context.Context, conv string) (domain.ConversationTurn, error) {
+	return f.latest(conv, func(domain.ConversationTurn) bool { return true })
+}
+
+// LatestPromptedConversationTurn filters by the prefix it is given, as the
+// store does, so a watch that passed another prefix would see other turns.
+func (f *fakeConversations) LatestPromptedConversationTurn(_ context.Context, conv, prefix string) (domain.ConversationTurn, error) {
+	if prefix == "" {
+		return domain.ConversationTurn{}, errors.New("empty provider-initiated prefix")
+	}
+	return f.latest(conv, func(t domain.ConversationTurn) bool { return !strings.HasPrefix(t.ProviderTurnID, prefix) })
+}
+
+// latest is the newest of conv's turns keep accepts: the latest asked
+// for, and of two asked for at once the one added last, as the store orders.
+func (f *fakeConversations) latest(conv string, keep func(domain.ConversationTurn) bool) (domain.ConversationTurn, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	t, ok := f.turns[domain.SessionID(conv[len("conv-"):])]
-	if !ok {
+	var (
+		newest domain.ConversationTurn
+		found  bool
+	)
+	for _, t := range f.turns[domain.SessionID(strings.TrimPrefix(conv, "conv-"))] {
+		if keep(t) && (!found || !t.RequestedAt.Before(newest.RequestedAt)) {
+			newest, found = t, true
+		}
+	}
+	if !found {
 		return domain.ConversationTurn{}, domain.ErrNoConversationTurn
 	}
-	return t, nil
+	return newest, nil
 }
 
 func (f *fakeConversations) set(s domain.SessionID, t domain.ConversationTurn) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.turns[s] = t
+	f.turns[s] = []domain.ConversationTurn{t}
+}
+
+// addProviderTurn adds a turn the provider opened on its own, after the
+// session's other turns: its provider turn id has the provider-initiated
+// prefix.
+func (f *fakeConversations) addProviderTurn(s domain.SessionID, t domain.ConversationTurn) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if !strings.HasPrefix(t.ProviderTurnID, ports.ProviderInitiatedTurnPrefix) {
+		t.ProviderTurnID = ports.ProviderInitiatedTurnPrefix + t.ID
+	}
+	f.turns[s] = append(f.turns[s], t)
 }
 
 type fakeAccounts struct{ ids map[domain.SessionID]string }
@@ -486,7 +526,7 @@ func newFixture(t *testing.T) *fixture {
 		now:      t0,
 		store:    newFakeStore(),
 		sessions: &fakeSessions{sessions: map[domain.SessionID]domain.SessionRecord{}},
-		convs:    &fakeConversations{turns: map[domain.SessionID]domain.ConversationTurn{}},
+		convs:    &fakeConversations{turns: map[domain.SessionID][]domain.ConversationTurn{}},
 	}
 	f.msgs = &fakeMessenger{trace: &f.trace}
 	f.counter = &fakeCounter{trace: &f.trace}

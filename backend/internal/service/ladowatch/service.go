@@ -77,6 +77,11 @@ type Conversations interface {
 	// LatestConversationTurn is the conversation's newest turn, queued ones
 	// included; domain.ErrNoConversationTurn when it has none.
 	LatestConversationTurn(ctx context.Context, conversationID string) (domain.ConversationTurn, error)
+	// LatestPromptedConversationTurn is LatestConversationTurn without the
+	// turns the provider opened on its own, those whose provider turn id
+	// starts with providerInitiatedPrefix (issue #6);
+	// domain.ErrNoConversationTurn when it has none.
+	LatestPromptedConversationTurn(ctx context.Context, conversationID, providerInitiatedPrefix string) (domain.ConversationTurn, error)
 }
 
 // Accounts tells which agent account a session runs on
