@@ -21952,6 +21952,7 @@ components:
           - agent_unavailable
           - conflict_unresolved
           - background_overdue
+          - restart_resumed
           type: string
         level:
           description: 1 past a cost threshold, 2 past twice it; the resume's number

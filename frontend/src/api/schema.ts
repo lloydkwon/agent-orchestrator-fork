@@ -7399,7 +7399,7 @@ export interface components {
             id: number;
             issueRef: string;
             /** @enum {string} */
-            kind: "task_cost" | "session_cost" | "session_compactions" | "limited" | "limit_resumed" | "stall_nudged" | "stalled" | "agent_unavailable" | "conflict_unresolved" | "background_overdue";
+            kind: "task_cost" | "session_cost" | "session_compactions" | "limited" | "limit_resumed" | "stall_nudged" | "stalled" | "agent_unavailable" | "conflict_unresolved" | "background_overdue" | "restart_resumed";
             /** @description 1 past a cost threshold, 2 past twice it; the resume's number for limit_resumed, the stop's for limited and the stall's for stalled; otherwise 1. */
             level: number;
             /** @description The alert's one line, as the orchestrator gets it. */
