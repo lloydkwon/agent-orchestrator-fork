@@ -21,7 +21,9 @@ import (
 	"github.com/aoagents/agent-orchestrator/backend/internal/ports"
 	reviewcore "github.com/aoagents/agent-orchestrator/backend/internal/review"
 	"github.com/aoagents/agent-orchestrator/backend/internal/service/agentaccounts"
+	chatsvc "github.com/aoagents/agent-orchestrator/backend/internal/service/chat"
 	"github.com/aoagents/agent-orchestrator/backend/internal/service/ladoalert"
+	"github.com/aoagents/agent-orchestrator/backend/internal/service/ladobackground"
 	"github.com/aoagents/agent-orchestrator/backend/internal/service/ladolaunch"
 	"github.com/aoagents/agent-orchestrator/backend/internal/service/ladotask"
 	"github.com/aoagents/agent-orchestrator/backend/internal/service/ladousage"
@@ -58,6 +60,9 @@ var (
 	_ ladowatch.Identities = (*agentaccounts.Service)(nil)
 	// AO's notification writer tells the owner a worker waits on them.
 	_ ladowatch.Notifier = (*notify.Manager)(nil)
+	// Chat controllers record a session's background tasks in the store, and
+	// the watch reads them (LADO fork, 2026-11-27).
+	_ chatsvc.BackgroundTaskWriter = (*sqlite.Store)(nil)
 )
 
 // ladoWatchServices are the worker watch's services.
@@ -103,6 +108,9 @@ func wireLadoWatch(cfg config.Config, store *sqlite.Store, hooks ladoWatchHooks,
 	if notifier != nil {
 		deps.Notifier = notifier
 	}
+	// A worker whose bridge predates AO's background-task report is read
+	// from its conversation file and the process table (LADO fork).
+	deps.Background = ladobackground.New(ladobackground.Deps{Store: store, Shells: &ladobackground.ProcShells{}, Log: log})
 	watch := ladowatch.New(deps)
 	alerts := ladoalert.New(ladoalert.Deps{Store: store, Usage: usage, Log: log})
 

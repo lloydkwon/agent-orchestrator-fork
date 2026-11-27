@@ -1076,6 +1076,7 @@ func Run() error {
 		LadoRelay:          lado.relay,
 		LadoLogWatch:       ladoLogWatch,
 		LadoAccountLimits:  lado.watch.watch,
+		LadoBackground:     store,
 		LadoDBChanges:      ladoDBChanges,
 		LadoPhone:          ladoPhone,
 		LadoPresence:       newLadoPresence(browserRuntimeToken, os.Getenv(browserruntime.RuntimeTokenStdinEnv) == "1", log),

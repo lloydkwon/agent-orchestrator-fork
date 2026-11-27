@@ -44,6 +44,15 @@ type LadoWatchSettings struct {
 // Stall is StallMinutes as a duration.
 func (s LadoWatchSettings) Stall() time.Duration { return time.Duration(s.StallMinutes) * time.Minute }
 
+// LadoBackgroundOverdueFactor times the stall time is how long a worker may
+// rest on a background task before LADO alerts (owner's choice, 2026-11-27).
+const LadoBackgroundOverdueFactor = 3
+
+// BackgroundOverdue is how long a worker may rest on a background task.
+func (s LadoWatchSettings) BackgroundOverdue() time.Duration {
+	return LadoBackgroundOverdueFactor * s.Stall()
+}
+
 // Await is AwaitMinutes as a duration; 0 when the quiet wait is off.
 func (s LadoWatchSettings) Await() time.Duration { return time.Duration(s.AwaitMinutes) * time.Minute }
 
@@ -508,13 +517,18 @@ const (
 	// an execution's PR (LadoResolveNeedsHuman). Its session is the
 	// execution's, Value the failed attempts in a row.
 	LadoAlertConflictUnresolved LadoAlertKind = "conflict_unresolved"
+	// LadoAlertBackgroundOverdue (LADO fork, 2026-11-27): a worker rests on
+	// a background task that has run past three times the stall time. Its
+	// level is 1, Value the minutes since the oldest task started, Threshold
+	// the limit in minutes.
+	LadoAlertBackgroundOverdue LadoAlertKind = "background_overdue"
 )
 
 // LadoAlertKinds lists the alert kinds.
 var LadoAlertKinds = []LadoAlertKind{
 	LadoAlertTaskCost, LadoAlertSessionCost, LadoAlertSessionCompactions, LadoAlertLimited,
 	LadoAlertLimitResumed, LadoAlertStallNudged, LadoAlertStalled, LadoAlertAgentUnavailable,
-	LadoAlertConflictUnresolved,
+	LadoAlertConflictUnresolved, LadoAlertBackgroundOverdue,
 }
 
 // Valid reports whether k is a known kind.
@@ -570,6 +584,7 @@ const (
 	ladoAlertStalled            = "#%d 세션 %s 가 %d분 넘게 멈춤"
 	ladoAlertAgentUnavailable   = "#%d 에이전트 실행 파일을 쓸 수 없어 워커를 기다리게 함"
 	ladoAlertConflictUnresolved = "#%d 실행 %s 의 PR 충돌을 LADO가 풀지 못함 — 직접 해결하세요"
+	ladoAlertBackgroundOverdue  = "#%d 세션 %s 의 백그라운드 명령이 %d분째 끝나지 않음"
 	ladoAlertUnknown            = "#%d 세션 %s 알림 %s"
 )
 
@@ -603,6 +618,8 @@ func (a LadoAlert) Line(issue int) string {
 		return ladoNoticeLine(ladoAlertAgentUnavailable, issue)
 	case LadoAlertConflictUnresolved:
 		return ladoNoticeLine(ladoAlertConflictUnresolved, issue, session)
+	case LadoAlertBackgroundOverdue:
+		return ladoNoticeLine(ladoAlertBackgroundOverdue, issue, session, a.Value)
 	}
 	return ladoNoticeLine(ladoAlertUnknown, issue, session, a.Kind)
 }

@@ -156,13 +156,17 @@ func TestOwnerAlertsGoOutOnceAndInformingOnesStay(t *testing.T) {
 		domain.LadoAlert{ID: 2, Kind: domain.LadoAlertStalled, SessionID: "water_ai-51", ProjectID: "water_ai", IssueRef: "gitlab:lado/water_ai#13", Value: 120, CreatedAt: start.Add(time.Minute)},
 		domain.LadoAlert{ID: 3, Kind: domain.LadoAlertLimitResumed, ProjectID: "water_ai", IssueRef: "gitlab:lado/water_ai#13", CreatedAt: start.Add(time.Minute)},
 		domain.LadoAlert{ID: 4, Kind: domain.LadoAlertAgentUnavailable, ProjectID: "water_ai", IssueRef: "gitlab:lado/water_ai#14", CreatedAt: start.Add(2 * time.Minute)},
+		domain.LadoAlert{ID: 5, Kind: domain.LadoAlertBackgroundOverdue, SessionID: "water_ai-54", ProjectID: "water_ai", IssueRef: "gitlab:lado/water_ai#13", Value: 361, CreatedAt: start.Add(2 * time.Minute)},
 	)
 	alerts.mu.Unlock()
 	d.pollAlerts(ctx, start.Add(3*time.Minute))
 	d.pollAlerts(ctx, start.Add(4*time.Minute))
 	got := srv.messages()
-	if len(got) != 2 {
-		t.Fatalf("published %d messages, want 2 (stalled, agent_unavailable): %+v", len(got), got)
+	if len(got) != 3 {
+		t.Fatalf("published %d messages, want 3 (stalled, agent_unavailable, background_overdue): %+v", len(got), got)
+	}
+	if !strings.Contains(got[2].Message, "361") || !strings.Contains(got[2].Title, "#13") {
+		t.Fatalf("background_overdue message = %+v", got[2])
 	}
 	if !strings.Contains(got[0].Title, "#13") || !strings.Contains(got[0].Message, "120") {
 		t.Fatalf("stalled message = %+v", got[0])
@@ -175,11 +179,11 @@ func TestOwnerAlertsGoOutOnceAndInformingOnesStay(t *testing.T) {
 	// still goes out: the alert ids, not their times, mark what was read.
 	alerts.mu.Lock()
 	alerts.alerts = append(alerts.alerts, domain.LadoAlert{
-		ID: 5, Kind: domain.LadoAlertConflictUnresolved, ProjectID: "water_ai", IssueRef: "gitlab:lado/water_ai#15", Value: 3, CreatedAt: start.Add(30 * time.Second),
+		ID: 7, Kind: domain.LadoAlertConflictUnresolved, ProjectID: "water_ai", IssueRef: "gitlab:lado/water_ai#15", Value: 3, CreatedAt: start.Add(30 * time.Second),
 	})
 	alerts.mu.Unlock()
 	d.pollAlerts(ctx, start.Add(5*time.Minute))
-	if got := srv.messages(); len(got) != 3 || !strings.Contains(got[2].Title, "#15") {
+	if got := srv.messages(); len(got) != 4 || !strings.Contains(got[3].Title, "#15") {
 		t.Fatalf("the late alert did not go out: %+v", got)
 	}
 }

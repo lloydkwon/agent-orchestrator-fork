@@ -36,6 +36,9 @@ type Store interface {
 	LadoTask(ctx context.Context, id domain.LadoTaskID) (domain.LadoTask, bool, error)
 	LatestSessionReportAt(ctx context.Context, sessionID domain.SessionID) (domain.ReportState, time.Time, bool, error)
 	LadoEffectiveWatchSettings(ctx context.Context, project domain.ProjectID) (domain.LadoWatchSettings, error)
+	// LadoSessionBackground is what AO last heard of a session's live
+	// background tasks; ok is false when it does not know (LADO fork).
+	LadoSessionBackground(ctx context.Context, id domain.SessionID) (domain.SessionBackgroundTasks, bool, error)
 
 	EnsureLadoSessionWatch(ctx context.Context, session domain.SessionID, task domain.LadoTaskID, at time.Time) (bool, error)
 	LadoSessionWatch(ctx context.Context, session domain.SessionID) (domain.LadoSessionWatch, bool, error)
@@ -63,6 +66,13 @@ type Store interface {
 	// mode project's orchestrator when an account's limit holds and lifts.
 	ListLadoModeProjectIDs(ctx context.Context) ([]domain.ProjectID, error)
 	AddLadoOrchestratorNotice(ctx context.Context, n domain.LadoOrchestratorNotice) (bool, error)
+}
+
+// BackgroundReader reads a worker's live background work from its
+// conversation file and the process table, and records the reading
+// (*ladobackground.Reader); ok is false without a readable file.
+type BackgroundReader interface {
+	Read(ctx context.Context, id domain.SessionID, now time.Time) (domain.SessionBackgroundTasks, bool, error)
 }
 
 // Sessions reads AO's sessions: their agent, activity and whether they ended.
@@ -122,6 +132,9 @@ type Deps struct {
 	CompactCounter CompactCounter
 	// Notifier tells the owner a worker waits on them; nil tells nothing.
 	Notifier Notifier
+	// Background reads a worker's background work from its conversation
+	// file when its bridge cannot report it; nil reads nothing.
+	Background BackgroundReader
 	// Clock stamps changes; nil uses time.Now.
 	Clock func() time.Time
 	// Local is the time zone a Codex reset time is read in; nil uses
@@ -249,6 +262,8 @@ type worker struct {
 	// reportAt when it was made.
 	report   domain.ReportState
 	reportAt time.Time
+	// background is the session's live background tasks, when AO knows them.
+	background domain.SessionBackgroundTasks
 }
 
 // resting reports whether the worker finished its turn and waits: AO shows it
@@ -257,6 +272,13 @@ type worker struct {
 func (w worker) resting() bool {
 	state := w.session.Activity.State
 	return (state == domain.ActivityIdle || state == domain.ActivityWaitingInput) && w.hasTurn && w.turn.State.Terminal()
+}
+
+// onBackground reports whether the worker rests on background work it
+// started (a background shell, Monitor or subagent still runs): it waits on
+// that work, not on its owner, and is not stalled.
+func (w worker) onBackground() bool {
+	return w.resting() && w.background.Running()
 }
 
 // ownerStopped reports whether the worker's newest turn was stopped or
@@ -297,6 +319,9 @@ func (s *Service) watch(ctx context.Context, pass *tickPass, exec domain.LadoExe
 	if reported {
 		w.report, w.reportAt = state, reportAt
 	}
+	if err := s.readBackground(ctx, &w, now); err != nil {
+		return err
+	}
 	watch, ok, err := s.deps.Store.LadoSessionWatch(ctx, exec.SessionID)
 	if err != nil {
 		return err
@@ -321,6 +346,25 @@ func (s *Service) watch(ctx context.Context, pass *tickPass, exec domain.LadoExe
 		return fmt.Errorf("watch the stall: %w", err)
 	}
 	s.watchAwaiting(ctx, &w, now)
+	return nil
+}
+
+// readBackground reads the worker's live background work: the bridge's
+// report, or, when the bridge cannot report, the conversation file's.
+func (s *Service) readBackground(ctx context.Context, w *worker, now time.Time) error {
+	bg, known, err := s.deps.Store.LadoSessionBackground(ctx, w.session.ID)
+	if err != nil {
+		return fmt.Errorf("read the background tasks: %w", err)
+	}
+	if (!known || bg.Source == domain.BackgroundSourceTranscript) && s.deps.Background != nil {
+		read, ok, err := s.deps.Background.Read(ctx, w.session.ID, now)
+		if err != nil {
+			s.deps.Log.Debug("LADO could not read a worker's background work", "session", w.session.ID, "err", err)
+		} else if ok {
+			bg = read
+		}
+	}
+	w.background = bg
 	return nil
 }
 

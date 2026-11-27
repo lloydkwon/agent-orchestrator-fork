@@ -137,6 +137,7 @@ type conversation struct {
 	onAuthRejected        func()
 	promptResponseFailure func(acpsdk.PromptResponse) error
 	hibernationCheck      func(context.Context, *acpsdk.ClientSideConnection, acpsdk.SessionId) (bool, error)
+	backgroundTasksRead   func(context.Context, *acpsdk.ClientSideConnection, acpsdk.SessionId) ([]domain.BackgroundTask, bool, error)
 	historyNotice         func(string) bool
 	// preamble is standing context attached to the first prompt that actually
 	// reaches the provider. It is the delivery channel for agents that accept no
@@ -1086,6 +1087,17 @@ func (c *conversation) CanHibernate(ctx context.Context) (bool, error) {
 	id := c.sessionID
 	c.mu.Unlock()
 	return c.hibernationCheck(ctx, c.conn, acpsdk.SessionId(id))
+}
+
+// BackgroundTasks reads the provider's live background tasks (LADO fork).
+func (c *conversation) BackgroundTasks(ctx context.Context) ([]domain.BackgroundTask, bool, error) {
+	if c.backgroundTasksRead == nil {
+		return nil, false, nil
+	}
+	c.mu.Lock()
+	id := c.sessionID
+	c.mu.Unlock()
+	return c.backgroundTasksRead(ctx, c.conn, acpsdk.SessionId(id))
 }
 
 // Hibernate releases the bridge and its provider without closing the native

@@ -76,6 +76,8 @@ import {
 } from "../types/workspace";
 import { getSessionStatusGlyphView } from "../lib/session-presentation";
 import { useSessionAwaitingOwner } from "../hooks/useAwaitingOwner";
+import { useSessionBackground } from "../hooks/useSessionBackground";
+import { backgroundSummary } from "../lib/lado-background";
 import { deriveSessionAgentSwitchPresentation } from "../lib/agent-switch-presentation";
 import { aoBridge } from "../lib/bridge";
 import { hasTrustedApiBaseUrl } from "../lib/api-client";
@@ -572,9 +574,16 @@ function useSelection() {
 // 같은 폭이다 — 이모지와 점이 바뀌어도 제목과 «더 보기» 줄의 들여쓰기가 움직이지 않는다.
 // 열린 needs_input 알림이 있는 세션도 ❗ 를 그린다 — LADO 워커가 질문으로 턴을 끝내면 activity 는 idle 이지만
 // LADO 감시가 그 알림을 올린다(2026-11-27, useSessionAwaitingOwner).
+// 💻 는 에이전트가 남겨 둔 백그라운드 작업(셸·Monitor·하위 에이전트)이 도는 idle 세션이다(2026-11-27). 마우스를
+// 올리면 첫 작업의 설명·시작 시각이 보인다.
 function SessionStatusDot({ session }: { session: WorkspaceSession }) {
+	const { t, i18n } = useTranslation();
 	const awaitingOwner = useSessionAwaitingOwner(session);
-	const view = getSessionStatusGlyphView(session, undefined, { awaitingOwner });
+	const background = useSessionBackground(session);
+	const view = getSessionStatusGlyphView(session, undefined, { awaitingOwner, backgroundTasks: background?.tasks.length });
+	const title = view.glyph === "background" && background
+		? t("session.backgroundWork", { summary: backgroundSummary(background, i18n.language) })
+		: undefined;
 	return (
 		<span
 			aria-hidden="true"
@@ -591,6 +600,7 @@ function SessionStatusDot({ session }: { session: WorkspaceSession }) {
 					className="text-xs leading-none"
 					data-session-status={session.status}
 					data-status-glyph={view.glyph}
+					title={title}
 				>
 					{view.symbol}
 				</span>
@@ -2571,11 +2581,12 @@ const SessionMessageAge = memo(function SessionMessageAge({ session }: { session
 	const { t } = useTranslation();
 	// 훅은 아래 이른 반환보다 먼저 부른다. ❗ 행(사람 대기 포함)의 시간도 빨갛게 칠한다.
 	const awaitingOwner = useSessionAwaitingOwner(session);
+	const background = useSessionBackground(session);
 	const at = session.lastInteractionAt ?? session.lastUserMessageAt;
 	if (!at) return null;
 	// LADO fork: mux 목록처럼 작업 중·기다림 행의 시간은 상태 색을 입는다(getSessionStatusGlyphView).
 	// cn(tailwind-merge)으로 합치지 않는다 — 사용자 정의 크기 text-micro 를 글자색으로 보고 색 클래스와 함께 지운다.
-	const ageClassName = getSessionStatusGlyphView(session, undefined, { awaitingOwner }).ageClassName || "text-passive";
+	const ageClassName = getSessionStatusGlyphView(session, undefined, { awaitingOwner, backgroundTasks: background?.tasks.length }).ageClassName || "text-passive";
 
 	return (
 		<time

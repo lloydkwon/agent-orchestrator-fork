@@ -52,6 +52,9 @@ type LadoController struct {
 	// AccountLimits lists the account usage limits LADO holds new workers
 	// for and releases one by hand (issue #92).
 	AccountLimits LadoAccountLimitService
+	// Background lists the live sessions' background tasks (LADO fork,
+	// 2026-11-27).
+	Background LadoBackgroundService
 	// DBChanges ties the production database SQL of a PR to its
 	// integration approval (#97).
 	DBChanges LadoDBChangeService
@@ -118,6 +121,7 @@ func (c *LadoController) Register(r chi.Router) {
 	c.registerRelay(r)
 	c.registerLogWatch(r)
 	c.registerAccountLimits(r)
+	c.registerBackground(r)
 	c.registerDBChanges(r)
 	c.registerPhone(r)
 }

@@ -1271,6 +1271,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/lado/background-tasks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List the background tasks (shells, Monitors, subagents) of the live sessions AO knows them of; a session idle on them waits on its own work */
+        get: operations["listLadoSessionBackground"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/lado/bindings": {
         parameters: {
             query?: never;
@@ -7381,7 +7398,7 @@ export interface components {
             id: number;
             issueRef: string;
             /** @enum {string} */
-            kind: "task_cost" | "session_cost" | "session_compactions" | "limited" | "limit_resumed" | "stall_nudged" | "stalled" | "agent_unavailable" | "conflict_unresolved";
+            kind: "task_cost" | "session_cost" | "session_compactions" | "limited" | "limit_resumed" | "stall_nudged" | "stalled" | "agent_unavailable" | "conflict_unresolved" | "background_overdue";
             /** @description 1 past a cost threshold, 2 past twice it; the resume's number for limit_resumed, the stop's for limited and the stall's for stalled; otherwise 1. */
             level: number;
             /** @description The alert's one line, as the orchestrator gets it. */
@@ -7437,6 +7454,20 @@ export interface components {
             setupRemoved: string[];
             /** @description Hash of the rule snapshot fixed in the approval. */
             snapshotSha256: string;
+        };
+        LadoBackgroundListResponse: {
+            sessions: components["schemas"]["LadoSessionBackgroundResponse"][];
+        };
+        LadoBackgroundTaskResponse: {
+            /** @description The command's first line or the task's description, at most 80 characters. */
+            description: string;
+            /**
+             * Format: date-time
+             * @description When the task started; omitted when unknown.
+             */
+            startedAt?: null | string;
+            /** @description shell, subagent, monitor or workflow, as the agent names it. */
+            type: string;
         };
         LadoBranchProtectionResponse: {
             /** @description The base branch workers start from; empty when LADO could not tell it. */
@@ -8942,6 +8973,17 @@ export interface components {
             problemCode?: "key_home_unknown" | "key_path_relative" | "key_missing" | "key_not_a_file" | "host_key_untrusted" | "key_refused" | "ssh_failed";
             /** @description What git or ssh printed, when there is one to show. */
             problemDetail?: string;
+        };
+        LadoSessionBackgroundResponse: {
+            sessionId: string;
+            /**
+             * @description bridge: the agent bridge's own report; transcript: read from the conversation file and the process table.
+             * @enum {string}
+             */
+            source: "bridge" | "transcript";
+            tasks: components["schemas"]["LadoBackgroundTaskResponse"][];
+            /** Format: date-time */
+            updatedAt: string;
         };
         LadoSessionClaudeChromeResponse: {
             /** @enum {string} */
@@ -16154,6 +16196,44 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Not Implemented */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+        };
+    };
+    listLadoSessionBackground: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LadoBackgroundListResponse"];
                 };
             };
             /** @description Internal Server Error */

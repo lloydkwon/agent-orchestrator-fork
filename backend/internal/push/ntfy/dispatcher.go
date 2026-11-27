@@ -188,6 +188,12 @@ func alertMessage(a domain.LadoAlert) (message, bool) {
 			Message:  "LADO 가 워커를 띄울 에이전트를 시작할 수 없습니다",
 			Priority: priorityHigh,
 		}, true
+	case domain.LadoAlertBackgroundOverdue:
+		return message{
+			Title:    headline("💻", project, issue, "백그라운드 명령 지연"),
+			Message:  fmt.Sprintf("%s 세션의 백그라운드 명령이 %d분째 끝나지 않습니다", who, a.Value),
+			Priority: priorityHigh,
+		}, true
 	case domain.LadoAlertConflictUnresolved:
 		return message{
 			Title:    headline("⚠", project, issue, "충돌 해결 실패"),

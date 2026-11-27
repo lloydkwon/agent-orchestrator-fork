@@ -121,6 +121,10 @@ type Config struct {
 	HistoryNotice func(string) bool
 	// CanHibernate checks provider-owned work that outlives an ACP prompt.
 	CanHibernate func(context.Context, *acpsdk.ClientSideConnection, acpsdk.SessionId) (bool, error)
+	// BackgroundTasks reads the provider's live background tasks (LADO fork,
+	// 2026-11-27); known is false when the provider cannot tell. Nil reads
+	// none: the conversation cannot tell.
+	BackgroundTasks func(context.Context, *acpsdk.ClientSideConnection, acpsdk.SessionId) ([]domain.BackgroundTask, bool, error)
 	// EncodeProviderConversationID and DecodeProviderConversationID let a binding
 	// persist ownership metadata around an opaque provider ID while keeping the
 	// raw value on the ACP wire.
@@ -623,6 +627,7 @@ func (d *Driver) initialize(
 	conv.onAuthRejected = d.cfg.OnAuthRejected
 	conv.promptResponseFailure = d.cfg.PromptResponseFailure
 	conv.hibernationCheck = d.cfg.CanHibernate
+	conv.backgroundTasksRead = d.cfg.BackgroundTasks
 	conv.decodeConversationID = d.cfg.DecodeProviderConversationID
 	conv.historyNotice = d.cfg.HistoryNotice
 	conv.requireAdvertised = d.cfg.RequireAdvertisedOptions

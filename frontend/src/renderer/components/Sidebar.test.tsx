@@ -2859,6 +2859,50 @@ describe("Sidebar", () => {
 		expect(mark("lado worker done")).toHaveAttribute("data-status-glyph", "done");
 	});
 
+	// LADO fork (2026-11-27): an idle session whose agent left background work running shows 💻,
+	// with the first task in its tooltip.
+	it("marks an idle session with running background work 💻", async () => {
+		const fallback = getMock.getMockImplementation();
+		getMock.mockImplementation((path: string) =>
+			path === "/api/v1/lado/background-tasks"
+				? Promise.resolve({
+						data: {
+							sessions: [
+								{
+									sessionId: "proj-1-drill",
+									source: "transcript",
+									updatedAt: "2026-11-27T04:31:02Z",
+									tasks: [{ type: "shell", description: "wait_event.sh 7000", startedAt: "2026-11-27T04:31:01Z" }],
+								},
+							],
+						},
+						error: undefined,
+						response: { status: 200 },
+					})
+				: fallback?.(path),
+		);
+		renderSidebar({
+			workspaces: [
+				{
+					...workspace,
+					sessions: [
+						{
+							...session,
+							id: "proj-1-drill",
+							title: "drill worker",
+							status: "idle",
+							activity: { state: "idle", lastActivityAt: "2026-11-27T04:31:00Z" },
+						},
+					],
+				},
+			],
+		});
+		const mark = () => screen.getByLabelText("Open drill worker").querySelector<Element>("[data-session-status]");
+		await waitFor(() => expect(mark()).toHaveAttribute("data-status-glyph", "background"));
+		expect(mark()).toHaveTextContent("💻");
+		expect(mark()?.getAttribute("title")).toMatch(/^Background work: wait_event\.sh 7000 · /);
+	});
+
 	it("shows the hourglass when an idle-section session has working activity", () => {
 		renderSidebar({
 			workspaces: [

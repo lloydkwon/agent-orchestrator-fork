@@ -281,9 +281,14 @@ var ladoSchemaNames = map[string]string{ //nolint:gosec // G101: schema names, n
 	"ControllersSetLadoLogFingerprintIgnoredRequest": "SetLadoLogFingerprintIgnoredRequest",
 
 	// The account usage limits (issue #92).
-	"ControllersLadoAccountKeyParam":             "LadoAccountKeyParam",
-	"ControllersLadoAccountLimitResponse":        "LadoAccountLimitResponse",
-	"ControllersLadoAccountLimitListResponse":    "LadoAccountLimitListResponse",
+	"ControllersLadoAccountKeyParam":          "LadoAccountKeyParam",
+	"ControllersLadoAccountLimitResponse":     "LadoAccountLimitResponse",
+	"ControllersLadoAccountLimitListResponse": "LadoAccountLimitListResponse",
+
+	// LADO fork (2026-11-27): the live sessions' background tasks.
+	"ControllersLadoBackgroundListResponse":      "LadoBackgroundListResponse",
+	"ControllersLadoSessionBackgroundResponse":   "LadoSessionBackgroundResponse",
+	"ControllersLadoBackgroundTaskResponse":      "LadoBackgroundTaskResponse",
 	"ControllersReleaseLadoAccountLimitRequest":  "ReleaseLadoAccountLimitRequest",
 	"ControllersReleaseLadoAccountLimitResponse": "ReleaseLadoAccountLimitResponse",
 
@@ -700,7 +705,7 @@ func ladoOperations() []operation {
 			reqBody:    controllers.WriteLadoKnowledgeNoteRequest{},
 			resps:      ladoResps(http.StatusOK, controllers.LadoKnowledgeNoteResponse{}, http.StatusBadRequest, http.StatusNotFound, http.StatusConflict),
 		},
-	}, slices.Concat(ladoSetupOperations(), ladoLogWatchOperations(), ladoAccountLimitOperations(), ladoDBChangeOperations(), ladoPhoneOperations())...)
+	}, slices.Concat(ladoSetupOperations(), ladoLogWatchOperations(), ladoAccountLimitOperations(), ladoBackgroundOperations(), ladoDBChangeOperations(), ladoPhoneOperations())...)
 }
 
 // ladoSetupOperations are the local setup routes (step 7 plan §13). Routes
@@ -866,6 +871,16 @@ func ladoLogWatchOperations() []operation {
 			resps:      ladoResps(http.StatusOK, controllers.LadoLogFingerprintResponse{}, http.StatusBadRequest, http.StatusNotFound),
 		},
 	}
+}
+
+// ladoBackgroundOperations list the live sessions' background tasks (LADO
+// fork, 2026-11-27).
+func ladoBackgroundOperations() []operation {
+	return []operation{{
+		method: http.MethodGet, path: "/api/v1/lado/background-tasks", id: "listLadoSessionBackground", tag: "lado",
+		summary: "List the background tasks (shells, Monitors, subagents) of the live sessions AO knows them of; a session idle on them waits on its own work",
+		resps:   ladoResps(http.StatusOK, controllers.LadoBackgroundListResponse{}),
+	}}
 }
 
 // ladoAccountLimitOperations are the account usage limit routes (issue #92).

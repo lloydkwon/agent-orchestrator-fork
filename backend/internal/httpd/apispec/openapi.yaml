@@ -3147,6 +3147,32 @@ paths:
       summary: Mark an alert seen; an alert seen before keeps its first time
       tags:
       - lado
+  /api/v1/lado/background-tasks:
+    get:
+      operationId: listLadoSessionBackground
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LadoBackgroundListResponse'
+          description: OK
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Internal Server Error
+        "501":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Not Implemented
+      summary: List the background tasks (shells, Monitors, subagents) of the live
+        sessions AO knows them of; a session idle on them waits on its own work
+      tags:
+      - lado
   /api/v1/lado/bindings:
     put:
       operationId: setLadoBinding
@@ -21922,6 +21948,7 @@ components:
           - stalled
           - agent_unavailable
           - conflict_unresolved
+          - background_overdue
           type: string
         level:
           description: 1 past a cost threshold, 2 past twice it; the resume's number
@@ -22051,6 +22078,34 @@ components:
       - setup
       - aoSystemSha256
       - accepted
+      type: object
+    LadoBackgroundListResponse:
+      properties:
+        sessions:
+          items:
+            $ref: '#/components/schemas/LadoSessionBackgroundResponse'
+          type: array
+      required:
+      - sessions
+      type: object
+    LadoBackgroundTaskResponse:
+      properties:
+        description:
+          description: The command's first line or the task's description, at most
+            80 characters.
+          type: string
+        startedAt:
+          description: When the task started; omitted when unknown.
+          format: date-time
+          type:
+          - "null"
+          - string
+        type:
+          description: shell, subagent, monitor or workflow, as the agent names it.
+          type: string
+      required:
+      - type
+      - description
       type: object
     LadoBranchProtectionResponse:
       properties:
@@ -25721,6 +25776,30 @@ components:
           type: string
       required:
       - ok
+      type: object
+    LadoSessionBackgroundResponse:
+      properties:
+        sessionId:
+          type: string
+        source:
+          description: 'bridge: the agent bridge''s own report; transcript: read from
+            the conversation file and the process table.'
+          enum:
+          - bridge
+          - transcript
+          type: string
+        tasks:
+          items:
+            $ref: '#/components/schemas/LadoBackgroundTaskResponse'
+          type: array
+        updatedAt:
+          format: date-time
+          type: string
+      required:
+      - sessionId
+      - tasks
+      - source
+      - updatedAt
       type: object
     LadoSessionClaudeChromeResponse:
       properties:

@@ -240,3 +240,46 @@ FROM usage_sources us
 JOIN usage_bindings ub ON ub.id = us.binding_id
 WHERE ub.session_id = sqlc.arg(session_id) AND us.kind IN ('claude_main', 'codex_rollout') AND us.subagent_id = ''
 ORDER BY us.kind, us.artifact_path;
+
+-- LADO fork: a session's live background tasks (migrations_lado/0025).
+
+-- name: UpsertLadoSessionBackground :exec
+-- The bridge's report: it replaces a transcript reading.
+INSERT INTO lado_session_background (session_id, tasks_json, source, updated_at)
+VALUES (sqlc.arg(session_id), sqlc.arg(tasks_json), 'bridge', sqlc.arg(updated_at))
+ON CONFLICT (session_id) DO UPDATE SET
+    tasks_json = excluded.tasks_json,
+    source = 'bridge',
+    updated_at = excluded.updated_at
+WHERE lado_session_background.tasks_json IS NOT excluded.tasks_json
+    OR lado_session_background.source <> 'bridge';
+
+-- name: UpsertLadoSessionBackgroundReading :exec
+-- What the LADO watch read of a worker whose bridge cannot report; a bridge
+-- row stays.
+INSERT INTO lado_session_background (session_id, tasks_json, source, updated_at)
+VALUES (sqlc.arg(session_id), sqlc.arg(tasks_json), 'transcript', sqlc.arg(updated_at))
+ON CONFLICT (session_id) DO UPDATE SET
+    tasks_json = excluded.tasks_json,
+    updated_at = excluded.updated_at
+WHERE lado_session_background.source = 'transcript'
+    AND lado_session_background.tasks_json IS NOT excluded.tasks_json;
+
+-- name: DeleteLadoSessionBackground :exec
+-- The bridge can no longer tell: its report goes; a transcript reading stays.
+DELETE FROM lado_session_background WHERE session_id = ? AND source = 'bridge';
+
+-- name: DeleteLadoSessionBackgroundReading :exec
+-- The conversation file cannot be read: the transcript reading goes.
+DELETE FROM lado_session_background WHERE session_id = ? AND source = 'transcript';
+
+-- name: GetLadoSessionBackground :one
+SELECT session_id, tasks_json, source, updated_at FROM lado_session_background WHERE session_id = ?;
+
+-- name: ListLiveLadoSessionBackground :many
+-- The background tasks of every session that has not ended.
+SELECT b.session_id, b.tasks_json, b.source, b.updated_at
+FROM lado_session_background b
+JOIN sessions s ON s.id = b.session_id
+WHERE s.is_terminated = FALSE AND s.activity_state <> 'exited'
+ORDER BY b.session_id;

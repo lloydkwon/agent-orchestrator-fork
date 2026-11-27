@@ -53,6 +53,7 @@ func New(plugin claudePlugin, log *slog.Logger, onAuthRejected func()) ports.Cha
 		OnAuthRejected:        claudeAuthRejected(onAuthRejected),
 		PromptResponseFailure: claudePromptResponseFailure,
 		CanHibernate:          claudeCanHibernate,
+		BackgroundTasks:       claudeBackgroundTasks,
 		HistoryNotice:         claudeTranscriptNotice,
 		Capabilities: ports.ChatCapabilities{
 			ports.ChatCapabilityStreaming:    true,
@@ -136,6 +137,31 @@ func claudeCanHibernate(ctx context.Context, conn *acpsdk.ClientSideConnection, 
 		return false, errors.New("claude background-task check is missing canHibernate")
 	}
 	return *result.CanHibernate, nil
+}
+
+// claudeBackgroundTasks asks the bridge for its live background tasks (LADO
+// fork, 2026-11-27). An unpatched bridge cannot tell.
+func claudeBackgroundTasks(ctx context.Context, conn *acpsdk.ClientSideConnection, id acpsdk.SessionId) ([]domain.BackgroundTask, bool, error) {
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	raw, err := conn.CallExtension(ctx, acpdriver.BackgroundTasksMethod, map[string]any{"sessionId": id})
+	if err != nil {
+		var requestErr *acpsdk.RequestError
+		if errors.As(err, &requestErr) && requestErr.Code == -32601 {
+			return nil, false, nil
+		}
+		return nil, false, err
+	}
+	var result struct {
+		Tasks *[]acpdriver.BridgeBackgroundTask `json:"tasks"`
+	}
+	if err := json.Unmarshal(raw, &result); err != nil {
+		return nil, false, err
+	}
+	if result.Tasks == nil {
+		return nil, false, errors.New("claude background-task list is missing tasks")
+	}
+	return acpdriver.BridgeBackgroundTasks(*result.Tasks), true, nil
 }
 
 func validateClaudeLaunchAuth(ctx context.Context, plugin claudePlugin, workingDir string, env map[string]string, log *slog.Logger) error {

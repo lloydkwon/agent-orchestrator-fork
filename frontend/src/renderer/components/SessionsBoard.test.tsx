@@ -280,6 +280,33 @@ describe("SessionsBoard", () => {
 		expect(presentation.lastUserMessageAt).toBe("2026-01-01T09:00:00Z");
 	});
 
+	// LADO fork (2026-11-27): an idle worker whose background work still runs waits on its own
+	// work, so its card says so instead of the server's «Needs review».
+	it("labels an idle card with running background work instead of Needs review", () => {
+		const idle = boardSession({
+			id: "bg-session",
+			title: "drill worker",
+			status: "idle",
+			displayStatus: "Needs review" as const,
+			activity: { state: "idle", lastActivityAt: "2026-11-27T04:31:00Z" },
+		});
+		const background = {
+			sessionId: "bg-session",
+			source: "transcript" as const,
+			updatedAt: "2026-11-27T04:31:02Z",
+			tasks: [{ type: "shell", description: "wait_event.sh 7000", startedAt: "2026-11-27T04:31:01Z" }],
+		};
+		const presentation = toBoardSessionPresentation(idle, appI18n.t, background);
+		expect(presentation.statusPresentation?.label).toBe("💻 Waiting on background work");
+		expect(toBoardSessionPresentation(idle, appI18n.t).statusPresentation).toBeUndefined();
+		const working = toBoardSessionPresentation(
+			{ ...idle, activity: { state: "active", lastActivityAt: "2026-11-27T04:32:00Z" } },
+			appI18n.t,
+			background,
+		);
+		expect(working.statusPresentation).toBeUndefined();
+	});
+
 	it("localizes dynamic card actions and pull request lifecycle labels", async () => {
 		await appI18n.changeLanguage("zh-CN");
 		workspaceQueryMock.mockReturnValue({

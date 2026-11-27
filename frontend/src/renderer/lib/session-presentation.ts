@@ -100,7 +100,7 @@ export function getSessionStatusDotView(
 }
 
 /** What fills a sidebar row's status slot. `dot` keeps the plain section dot. */
-export type SessionStatusGlyph = "working" | "needs_you" | "done" | "dot";
+export type SessionStatusGlyph = "working" | "needs_you" | "done" | "background" | "dot";
 
 export type SessionStatusGlyphView = {
 	glyph: SessionStatusGlyph;
@@ -113,7 +113,7 @@ export type SessionStatusGlyphView = {
 };
 
 // mux(`tmux/aitools.go` 의 AIState.Icon)와 같은 글자다 — 사용자가 두 도구를 같은 눈으로 읽는다.
-const MUX_STATE_SYMBOLS = { working: "⏳", needs_you: "❗", done: "✅" } as const;
+const MUX_STATE_SYMBOLS = { working: "⏳", needs_you: "❗", done: "✅", background: "💻" } as const;
 
 // LADO fork: 사이드바 행의 상태 칸. mux(tmux 세션 매니저)와 같은 규칙이다 — 살아 있는 에이전트 상태가 있으면 그
 // 이모지가 점 자리를 «대신» 차지하고, 옆에 붙지 않는다(DESIGN.md «Status glyph rules»).
@@ -132,6 +132,12 @@ export type SessionStatusGlyphOptions = {
 	 * waiting_input. A working session keeps ⏳: it already got its answer.
 	 */
 	awaitingOwner?: boolean;
+	/**
+	 * How many background tasks (shells, Monitors, subagents) the session's agent left running
+	 * (LADO fork, 2026-11-27). Idle with one running waits on its own work: 💻, as mux shows a
+	 * shell it waits on. Unknown is 0.
+	 */
+	backgroundTasks?: number;
 };
 
 export function getSessionStatusGlyphView(
@@ -148,6 +154,9 @@ export function getSessionStatusGlyphView(
 	}
 	if (state === "waiting_input" || state === "blocked") {
 		return { glyph: "needs_you", symbol: MUX_STATE_SYMBOLS.needs_you, dotClassName: "", ageClassName: "text-status-needs-you" };
+	}
+	if (state === "idle" && (options.backgroundTasks ?? 0) > 0) {
+		return { glyph: "background", symbol: MUX_STATE_SYMBOLS.background, dotClassName: "", ageClassName: "" };
 	}
 	if (state === "idle" && session.status !== "no_signal") {
 		return { glyph: "done", symbol: MUX_STATE_SYMBOLS.done, dotClassName: "", ageClassName: "" };

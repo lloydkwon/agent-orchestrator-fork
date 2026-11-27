@@ -1015,6 +1015,10 @@ const (
 	// conversation can reach, which is what explains a tool call that failed for a
 	// reason the agent had no part in.
 	ChatEventMCPServers ChatEventKind = "mcp.servers"
+	// ChatEventBackgroundTasks (LADO fork, 2026-11-27) reports the provider's
+	// live background tasks after they changed. BackgroundTasks is the whole
+	// list; empty means none run.
+	ChatEventBackgroundTasks ChatEventKind = "background.tasks"
 )
 
 // ChatControllerState is the health of the driver's connection to the provider.
@@ -1069,6 +1073,9 @@ func (f *chatProviderFailure) Unwrap() error { return f.cause }
 // annotations to links before emitting events or returning history.
 type ChatEvent struct {
 	Kind ChatEventKind
+	// BackgroundTasks is set on background.tasks: the provider's whole live
+	// background-task list.
+	BackgroundTasks []domain.BackgroundTask
 	// NativeUserMessageID is an adapter-proven native user record identity.
 	// Unlike ProviderItemID, it is never synthesized or namespaced by AO.
 	NativeUserMessageID string
@@ -1222,6 +1229,13 @@ type ChatProviderHibernator interface {
 	// An error must leave the provider running.
 	CanHibernate(ctx context.Context) (bool, error)
 	Hibernate() error
+}
+
+// ChatBackgroundTaskReader reads the provider's live background tasks (LADO
+// fork, 2026-11-27). known is false when the provider cannot tell, as an
+// older Claude ACP bridge cannot.
+type ChatBackgroundTaskReader interface {
+	BackgroundTasks(ctx context.Context) (tasks []domain.BackgroundTask, known bool, err error)
 }
 
 // ChatLiveReconnector identifies attachment to the same initialized provider

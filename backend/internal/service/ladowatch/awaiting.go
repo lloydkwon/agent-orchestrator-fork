@@ -54,6 +54,9 @@ func awaitingTurn(w worker, now time.Time) (string, bool) {
 		}
 		return "", false
 	}
+	if w.onBackground() {
+		return "", false // it waits on its own background work
+	}
 	wait := w.settings.Await()
 	if wait <= 0 || now.Sub(quietSince(w)) < wait {
 		return "", false

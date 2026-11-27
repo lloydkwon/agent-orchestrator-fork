@@ -77,6 +77,26 @@ func (q *Queries) CountLadoUnseenAlertsByProject(ctx context.Context, projectID 
 	return items, nil
 }
 
+const deleteLadoSessionBackground = `-- name: DeleteLadoSessionBackground :exec
+DELETE FROM lado_session_background WHERE session_id = ? AND source = 'bridge'
+`
+
+// The bridge can no longer tell: its report goes; a transcript reading stays.
+func (q *Queries) DeleteLadoSessionBackground(ctx context.Context, sessionID string) error {
+	_, err := q.db.ExecContext(ctx, deleteLadoSessionBackground, sessionID)
+	return err
+}
+
+const deleteLadoSessionBackgroundReading = `-- name: DeleteLadoSessionBackgroundReading :exec
+DELETE FROM lado_session_background WHERE session_id = ? AND source = 'transcript'
+`
+
+// The conversation file cannot be read: the transcript reading goes.
+func (q *Queries) DeleteLadoSessionBackgroundReading(ctx context.Context, sessionID string) error {
+	_, err := q.db.ExecContext(ctx, deleteLadoSessionBackgroundReading, sessionID)
+	return err
+}
+
 const ensureLadoSessionWatch = `-- name: EnsureLadoSessionWatch :execrows
 INSERT OR IGNORE INTO lado_session_watch (session_id, task_id, created_at, updated_at)
 VALUES (?1, ?2, ?3, ?3)
@@ -159,6 +179,22 @@ func (q *Queries) GetLadoAlert(ctx context.Context, id int64) (GetLadoAlertRow, 
 		&i.SeenAt,
 		&i.ProjectID,
 		&i.IssueRef,
+	)
+	return i, err
+}
+
+const getLadoSessionBackground = `-- name: GetLadoSessionBackground :one
+SELECT session_id, tasks_json, source, updated_at FROM lado_session_background WHERE session_id = ?
+`
+
+func (q *Queries) GetLadoSessionBackground(ctx context.Context, sessionID string) (LadoSessionBackground, error) {
+	row := q.db.QueryRowContext(ctx, getLadoSessionBackground, sessionID)
+	var i LadoSessionBackground
+	err := row.Scan(
+		&i.SessionID,
+		&i.TasksJson,
+		&i.Source,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -670,6 +706,43 @@ func (q *Queries) ListLadoSessionWatchByTask(ctx context.Context, taskID string)
 	return items, nil
 }
 
+const listLiveLadoSessionBackground = `-- name: ListLiveLadoSessionBackground :many
+SELECT b.session_id, b.tasks_json, b.source, b.updated_at
+FROM lado_session_background b
+JOIN sessions s ON s.id = b.session_id
+WHERE s.is_terminated = FALSE AND s.activity_state <> 'exited'
+ORDER BY b.session_id
+`
+
+// The background tasks of every session that has not ended.
+func (q *Queries) ListLiveLadoSessionBackground(ctx context.Context) ([]LadoSessionBackground, error) {
+	rows, err := q.db.QueryContext(ctx, listLiveLadoSessionBackground)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []LadoSessionBackground{}
+	for rows.Next() {
+		var i LadoSessionBackground
+		if err := rows.Scan(
+			&i.SessionID,
+			&i.TasksJson,
+			&i.Source,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const markLadoAccountLimitReleased = `-- name: MarkLadoAccountLimitReleased :execrows
 UPDATE lado_account_limits
 SET released_at = ?1,
@@ -896,6 +969,54 @@ func (q *Queries) UpsertLadoAccountLimit(ctx context.Context, arg UpsertLadoAcco
 		arg.DetectedAt,
 		arg.UpdatedAt,
 	)
+	return err
+}
+
+const upsertLadoSessionBackground = `-- name: UpsertLadoSessionBackground :exec
+
+INSERT INTO lado_session_background (session_id, tasks_json, source, updated_at)
+VALUES (?1, ?2, 'bridge', ?3)
+ON CONFLICT (session_id) DO UPDATE SET
+    tasks_json = excluded.tasks_json,
+    source = 'bridge',
+    updated_at = excluded.updated_at
+WHERE lado_session_background.tasks_json IS NOT excluded.tasks_json
+    OR lado_session_background.source <> 'bridge'
+`
+
+type UpsertLadoSessionBackgroundParams struct {
+	SessionID string
+	TasksJson string
+	UpdatedAt time.Time
+}
+
+// LADO fork: a session's live background tasks (migrations_lado/0025).
+// The bridge's report: it replaces a transcript reading.
+func (q *Queries) UpsertLadoSessionBackground(ctx context.Context, arg UpsertLadoSessionBackgroundParams) error {
+	_, err := q.db.ExecContext(ctx, upsertLadoSessionBackground, arg.SessionID, arg.TasksJson, arg.UpdatedAt)
+	return err
+}
+
+const upsertLadoSessionBackgroundReading = `-- name: UpsertLadoSessionBackgroundReading :exec
+INSERT INTO lado_session_background (session_id, tasks_json, source, updated_at)
+VALUES (?1, ?2, 'transcript', ?3)
+ON CONFLICT (session_id) DO UPDATE SET
+    tasks_json = excluded.tasks_json,
+    updated_at = excluded.updated_at
+WHERE lado_session_background.source = 'transcript'
+    AND lado_session_background.tasks_json IS NOT excluded.tasks_json
+`
+
+type UpsertLadoSessionBackgroundReadingParams struct {
+	SessionID string
+	TasksJson string
+	UpdatedAt time.Time
+}
+
+// What the LADO watch read of a worker whose bridge cannot report; a bridge
+// row stays.
+func (q *Queries) UpsertLadoSessionBackgroundReading(ctx context.Context, arg UpsertLadoSessionBackgroundReadingParams) error {
+	_, err := q.db.ExecContext(ctx, upsertLadoSessionBackgroundReading, arg.SessionID, arg.TasksJson, arg.UpdatedAt)
 	return err
 }
 

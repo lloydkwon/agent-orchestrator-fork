@@ -242,6 +242,32 @@ describe("session presentation", () => {
 			expect(getSessionStatusGlyphView(idle, undefined, { awaitingOwner: false }).glyph).toBe("done");
 		});
 
+		// LADO fork (2026-11-27): idle on its own background work (a background shell, Monitor or
+		// subagent still runs) is not a finished turn: 💻, as mux shows it.
+		it("shows 💻 for an idle session whose background work runs", () => {
+			const idle = sessionWith({ status: "idle", scmStatus: "pr_open", activity: { state: "idle", lastActivityAt: at } });
+			expect(getSessionStatusGlyphView(idle, undefined, { backgroundTasks: 1 })).toEqual({
+				glyph: "background",
+				symbol: "💻",
+				dotClassName: "",
+				ageClassName: "",
+			});
+			const quiet = sessionWith({ status: "no_signal", activity: { state: "idle", lastActivityAt: at } });
+			expect(getSessionStatusGlyphView(quiet, undefined, { backgroundTasks: 2 }).glyph).toBe("background");
+			expect(getSessionStatusGlyphView(idle, undefined, { backgroundTasks: 0 }).glyph).toBe("done");
+		});
+
+		it("ranks ❗ and ⏳ over 💻", () => {
+			const idle = sessionWith({ status: "idle", activity: { state: "idle", lastActivityAt: at } });
+			expect(getSessionStatusGlyphView(idle, undefined, { backgroundTasks: 1, awaitingOwner: true }).glyph).toBe("needs_you");
+			const blocked = sessionWith({ status: "needs_input", activity: { state: "blocked", lastActivityAt: at } });
+			expect(getSessionStatusGlyphView(blocked, undefined, { backgroundTasks: 1 }).glyph).toBe("needs_you");
+			const active = sessionWith({ status: "working", activity: { state: "active", lastActivityAt: at } });
+			expect(getSessionStatusGlyphView(active, undefined, { backgroundTasks: 1 }).glyph).toBe("working");
+			const exited = sessionWith({ status: "exited", activity: { state: "exited", lastActivityAt: at } });
+			expect(getSessionStatusGlyphView(exited, undefined, { backgroundTasks: 1 }).glyph).toBe("dot");
+		});
+
 		it("keeps ⏳ once the awaited session works again", () => {
 			expect(
 				getSessionStatusGlyphView(

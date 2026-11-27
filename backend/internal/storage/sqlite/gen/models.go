@@ -1035,6 +1035,13 @@ type LadoRuleVersion struct {
 	CreatedAt       time.Time
 }
 
+type LadoSessionBackground struct {
+	SessionID string
+	TasksJson string
+	Source    string
+	UpdatedAt time.Time
+}
+
 type LadoSessionMetric struct {
 	SessionID       string
 	TaskID          string

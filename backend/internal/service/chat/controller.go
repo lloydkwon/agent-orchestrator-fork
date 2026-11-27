@@ -23,6 +23,7 @@ import (
 	"log/slog"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/aoagents/agent-orchestrator/backend/internal/domain"
@@ -210,6 +211,10 @@ type Controller struct {
 	now                    Clock
 	onAccountChanged       func(domain.SessionID, string, domain.AgentHarness)
 	onCodexCapacityChanged func(domain.SessionID, string, ports.CodexCapacityObservation)
+	// backgroundNotices counts the provider's background-task notices, so the
+	// start-up read never overwrites a newer notice (LADO fork).
+	backgroundNotices atomic.Uint64
+	backgroundMu      sync.Mutex
 
 	// sendMu serializes command dispatch so only one operation mutates the
 	// provider conversation at a time.
@@ -466,6 +471,7 @@ func (c *Controller) start() {
 	if c.harness != domain.HarnessCodex {
 		go c.readRateLimits()
 	}
+	go c.readBackgroundTasks()
 }
 
 type nativeHistoryHighWater struct {
@@ -2808,6 +2814,13 @@ func (c *Controller) project() {
 		preserveWork := c.preserveProviderOnStop || c.handoff == controllerHandoffHibernate
 		c.mu.Unlock()
 		if preserveWork && event.Kind == ports.ChatEventControllerState && event.ControllerState == ports.ChatControllerStopped {
+			continue
+		}
+		if event.Kind == ports.ChatEventBackgroundTasks {
+			// LADO fork: a volatile provider fact, not conversation history. It is
+			// recorded outside the projection transaction, which holds the store's
+			// write lock, and carries no host event id to acknowledge.
+			c.applyBackgroundTasks(ctx, event.BackgroundTasks, c.now())
 			continue
 		}
 		// A lifecycle event and a concurrent Send must agree on whether the root
