@@ -440,6 +440,8 @@ func TestLadoAPI_ProjectSettingsMaxConcurrent(t *testing.T) {
 		want.CheckCommands, want.CheckCommandsSHA256, want.CheckTimeoutMinutes = []controllers.LadoCheckCommandBody{}, domain.LadoCheckCommandsSHA256(nil), 30
 		// The overlap wait keeps its defaults: off for a new project (#101).
 		want.OverlapWait, want.OverlapIgnore, want.OverlapIgnoreIsDefault = false, domain.LadoDefaultOverlapIgnore, true
+		// Run without plan review keeps its default: on for every project.
+		want.RunDirectly = true
 		return reflect.DeepEqual(got, want)
 	}
 	if got := current(); !sameSettings(got, controllers.LadoProjectSettingsResponse{ProjectID: "mer", MaxConcurrent: 1}) {

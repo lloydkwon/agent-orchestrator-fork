@@ -28,6 +28,7 @@ type LadoTaskService interface {
 	Repositories(ctx context.Context, projectID domain.ProjectID) ([]ladotask.ProjectRepo, error)
 	View(ctx context.Context, id domain.LadoTaskID) (ladotask.TaskView, error)
 	RequestPlan(ctx context.Context, in ladotask.PlanRequestInput) (domain.LadoPlanRequest, error)
+	PlanFromIssue(ctx context.Context, in ladotask.IssuePlanInput) (domain.LadoPlanRevision, error)
 	Plans(ctx context.Context, id domain.LadoTaskID) (ladotask.PlanHistory, error)
 	Plan(ctx context.Context, revisionID domain.LadoPlanRevisionID) (ladotask.PlanView, error)
 	ApprovePlan(ctx context.Context, revisionID domain.LadoPlanRevisionID, sha256, policySHA256 string, proof domain.LadoPresenceProof) (domain.LadoPlanApproval, error)
@@ -260,6 +261,7 @@ func ladoTaskResponse(task domain.LadoTask) LadoTaskResponse {
 			State:      string(task.Issue.State),
 			URL:        task.Issue.URL,
 			ObservedAt: task.Issue.ObservedAt,
+			SHA256:     task.Issue.SnapshotSHA256,
 		},
 		Agent:     task.Agent,
 		Model:     task.Model,

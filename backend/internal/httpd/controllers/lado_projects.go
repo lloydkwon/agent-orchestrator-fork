@@ -83,6 +83,7 @@ func (c *LadoController) Register(r chi.Router) {
 	r.Patch("/lado/tasks/{taskId}", c.updateTask)
 	r.Post("/lado/tasks/{taskId}/cancel", c.cancelTask)
 	r.Post("/lado/tasks/{taskId}/plan-requests", c.requestPlan)
+	r.Post("/lado/tasks/{taskId}/issue-plan", c.planFromIssue)
 	r.Get("/lado/tasks/{taskId}/plans", c.listPlans)
 	r.Get("/lado/plans/{revisionId}", c.getPlan)
 	r.Post("/lado/plans/{revisionId}/approve", c.approvePlan)
@@ -150,6 +151,7 @@ func (c *LadoController) putProjectSettings(w http.ResponseWriter, r *http.Reque
 		CheckTimeoutMinutes:   req.CheckTimeoutMinutes,
 		CheckCommandsBase:     req.CheckCommandsBase,
 		OverlapWait:           req.OverlapWait,
+		RunDirectly:           req.RunDirectly,
 		OverlapIgnore:         req.OverlapIgnore,
 		OverlapIgnoreDefaults: req.OverlapIgnoreDefaults,
 		Presence:              c.presenceCheck(r, body),
@@ -186,6 +188,7 @@ func ladoProjectSettingsResponse(settings domain.LadoProjectSettings) LadoProjec
 		CheckCommandsSHA256:    domain.LadoCheckCommandsSHA256(settings.CheckCommands),
 		CheckTimeoutMinutes:    settings.CheckTimeoutMinutes,
 		OverlapWait:            settings.OverlapWait,
+		RunDirectly:            settings.RunDirectly,
 		OverlapIgnore:          settings.OverlapIgnoreOrDefault(),
 		OverlapIgnoreIsDefault: settings.OverlapIgnore == nil,
 	}

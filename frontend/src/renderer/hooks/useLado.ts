@@ -70,6 +70,7 @@ import {
 	ladoWatchSettingsQueryKey,
 	ladoWatchSettingsQueryRoot,
 	markLadoAlertSeen,
+	planLadoTaskFromIssue,
 	releaseLadoAccountLimit,
 	mergeLadoPR,
 	repostLadoIntegrationStatus,
@@ -137,9 +138,10 @@ export function useLadoProjectSettings(projectId: string | undefined) {
  * project id for projects LADO never governs (remote hosts, cloud,
  * standalone); they read as off at once.
  */
-export function useLadoModeState(projectId: string | undefined): { ladoMode: boolean; known: boolean } {
+export function useLadoModeState(projectId: string | undefined): { ladoMode: boolean; known: boolean; runDirectly: boolean } {
 	const query = useLadoProjectSettings(projectId);
-	return { ladoMode: query.data?.ladoMode === true, known: !projectId || query.isFetched };
+	// runDirectly: New Task starts with Run without plan review on.
+	return { ladoMode: query.data?.ladoMode === true, known: !projectId || query.isFetched, runDirectly: query.data?.runDirectly === true };
 }
 
 /** Whether a project is in LADO mode; see useLadoModeState. */
@@ -170,7 +172,7 @@ export function useSetLadoMode(projectId: string) {
 export function useUpdateLadoProjectSettings(projectId: string) {
 	const queryClient = useQueryClient();
 	return useMutation({
-		mutationFn: (input: { maxConcurrent: number }) => updateLadoProjectSettings(projectId, input),
+		mutationFn: (input: { maxConcurrent?: number; runDirectly?: boolean }) => updateLadoProjectSettings(projectId, input),
 		onSuccess: (settings) => queryClient.setQueryData(ladoProjectSettingsQueryKey(projectId), settings),
 		retry: false,
 	});
@@ -397,6 +399,38 @@ export function useRequestLadoPlan(projectId: string, taskId: string) {
 	return useMutation({
 		mutationFn: (input: { sourceCommentId?: string; note?: string }) => requestLadoPlan(taskId, input),
 		onSuccess: invalidate,
+		retry: false,
+	});
+}
+
+/**
+ * Runs a task straight from its issue: LADO writes the plan from the issue
+ * text the developer read (issueSha256) without a plan worker, and the
+ * developer approves it at once through the desktop confirmation. Resolves to
+ * null when the developer cancelled that confirmation; the plan then waits in
+ * the task view like any other.
+ */
+export function useRunLadoTaskFromIssue(projectId: string) {
+	const queryClient = useQueryClient();
+	return useMutation({
+		mutationFn: async ({ taskId, issueSha256 }: { taskId: string; issueSha256: string }) => {
+			const revision = await planLadoTaskFromIssue(taskId, issueSha256);
+			// The approval fixes the rules that apply now; the desktop app reads
+			// and signs them itself, and the hash is what a browser sends.
+			const rules = await queryClient.fetchQuery({
+				queryKey: ladoEffectiveQueryKey(projectId, taskId),
+				queryFn: () => fetchLadoEffective(projectId, taskId),
+				staleTime: 0,
+			});
+			return approveLadoPlan(revision.id, revision.sha256, rules.snapshotSha256);
+		},
+		// A plan may be pinned even when the approval did not happen.
+		onSettled: (_approval, _error, { taskId }) => {
+			void queryClient.invalidateQueries({ queryKey: ladoTasksQueryKey(projectId) });
+			void queryClient.invalidateQueries({ queryKey: ladoTaskViewQueryKey(taskId) });
+			void queryClient.invalidateQueries({ queryKey: ladoPlanQueryRoot });
+			void queryClient.invalidateQueries({ queryKey: ladoEffectiveQueryKey(projectId, taskId) });
+		},
 		retry: false,
 	});
 }

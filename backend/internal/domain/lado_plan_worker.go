@@ -32,6 +32,10 @@ const (
 	LadoPlanRequestOrchestrator LadoPlanRequestKind = "orchestrator"
 	// LadoPlanRequestWorker is a request a plan worker writes.
 	LadoPlanRequestWorker LadoPlanRequestKind = "worker"
+	// LadoPlanRequestIssue is a request the developer answered with the
+	// issue itself: LADO writes the plan from the issue and pins it at once,
+	// with no plan worker, critic or orchestrator.
+	LadoPlanRequestIssue LadoPlanRequestKind = "issue"
 )
 
 // LadoPlanRole is the role of a plan worker session.
@@ -168,6 +172,18 @@ const (
 // IsWorker reports whether a plan worker writes the request's plan.
 func (r LadoPlanRequest) IsWorker() bool {
 	return r.Kind == LadoPlanRequestWorker
+}
+
+// FromIssue reports whether LADO wrote the request's plan from the issue.
+func (r LadoPlanRequest) FromIssue() bool {
+	return r.Kind == LadoPlanRequestIssue
+}
+
+// LadoPlanRequestIssueSession is the session id an issue request holds,
+// since no session writes its plan: no AO session id has a colon, so it
+// names none.
+func LadoPlanRequestIssueSession(req LadoPlanRequestID) SessionID {
+	return SessionID("lado:issue/" + string(req))
 }
 
 // WorkerSession returns the request's designer session, or "" while it has

@@ -6975,6 +6975,70 @@ paths:
       summary: Cancel a task; the issue is never closed or edited
       tags:
       - lado
+  /api/v1/lado/tasks/{taskId}/issue-plan:
+    post:
+      operationId: planLadoTaskFromIssue
+      parameters:
+      - description: LADO task id.
+        in: path
+        name: taskId
+        required: true
+        schema:
+          description: LADO task id.
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateLadoIssuePlanRequest'
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LadoPlanRevisionResponse'
+          description: Created
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Bad Request
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Not Found
+        "409":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Conflict
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Internal Server Error
+        "501":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Not Implemented
+        "503":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Service Unavailable
+      summary: Pin the issue and a plan LADO writes from the issue text the developer
+        read, without a plan worker; the developer approves it next
+      tags:
+      - lado
   /api/v1/lado/tasks/{taskId}/parts:
     get:
       operationId: getLadoTaskParts
@@ -20244,6 +20308,16 @@ components:
       required:
       - url
       type: object
+    CreateLadoIssuePlanRequest:
+      properties:
+        issueSha256:
+          description: The sha256 of the issue's title and body as the developer read
+            them (the task view's issue.sha256, or the created task's issue.sha256);
+            LADO refuses when the issue changed since.
+          type: string
+      required:
+      - issueSha256
+      type: object
     CreateLadoPlanRequestRequest:
       properties:
         note:
@@ -23197,6 +23271,10 @@ components:
       properties:
         body:
           type: string
+        sha256:
+          description: Hash of this title and body; a plan from the issue binds to
+            it.
+          type: string
         state:
           enum:
           - open
@@ -24226,11 +24304,13 @@ components:
         id:
           type: string
         kind:
-          description: 'Who writes the plan: a plan worker, or, for a request made
-            before plan workers, the orchestrator.'
+          description: 'Who writes the plan: a plan worker, LADO from the issue itself
+            without a plan worker, or, for a request made before plan workers, the
+            orchestrator.'
           enum:
           - orchestrator
           - worker
+          - issue
           type: string
         note:
           description: What the developer asked to change.
@@ -24254,7 +24334,8 @@ components:
           type: string
         sessionId:
           description: 'The session that writes the plan: the orchestrator asked,
-            or the plan worker''s designer; empty while a plan worker waits to start.'
+            or the plan worker''s designer; empty while a plan worker waits to start,
+            and for a plan from the issue.'
           type: string
         sourceCommentId:
           description: The issue comment the developer named as the plan.
@@ -24356,9 +24437,12 @@ components:
         sha256:
           type: string
         source:
+          description: 'Who wrote the plan: the agent, a person editing it in the
+            artifact viewer, or LADO from the issue itself.'
           enum:
           - agent
           - user
+          - issue
           type: string
         taskId:
           type: string
@@ -24390,11 +24474,12 @@ components:
           description: Hash of the pinned plan file. An approval binds to it.
           type: string
         source:
-          description: 'Who wrote the version: the orchestrator, or a person editing
-            it in the artifact viewer.'
+          description: 'Who wrote the version: the orchestrator, a person editing
+            it in the artifact viewer, or LADO from the issue itself.'
           enum:
           - agent
           - user
+          - issue
           type: string
         valid:
           description: False when the plan has problems; such a plan cannot be approved.
@@ -24610,6 +24695,11 @@ components:
           type: boolean
         projectId:
           type: string
+        runDirectly:
+          description: 'New Task starts with Run without plan review on: LADO writes
+            the plan from the issue, and each run is still approved in the desktop
+            app. On until the project turns it off.'
+          type: boolean
       required:
       - projectId
       - ladoMode
@@ -24620,6 +24710,7 @@ components:
       - overlapWait
       - overlapIgnore
       - overlapIgnoreIsDefault
+      - runDirectly
       type: object
     LadoProjectUsageResponse:
       properties:
@@ -26702,6 +26793,10 @@ components:
           type: string
         ref:
           description: Canonical issue id, in the form AO stores in sessions.issue_id.
+          type: string
+        sha256:
+          description: Hash of the title and body LADO last read; a plan from the
+            issue binds to it.
           type: string
         state:
           description: Normalized issue state. GitHub reports a not-planned close
@@ -32362,6 +32457,12 @@ components:
         overlapWait:
           description: Hold a task while a live run of another task of the project
             may touch the same files. It changes without a presence proof.
+          type:
+          - "null"
+          - boolean
+        runDirectly:
+          description: Start New Task with Run without plan review on. It changes
+            without a presence proof; each run is still approved in the desktop app.
           type:
           - "null"
           - boolean

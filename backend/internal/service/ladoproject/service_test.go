@@ -52,7 +52,7 @@ func (f *fakeStore) stored(projectID domain.ProjectID) domain.LadoProjectSetting
 	if settings, ok := f.settings[projectID]; ok {
 		return settings
 	}
-	return domain.LadoProjectSettings{ProjectID: projectID, MaxConcurrent: 1, CheckCommands: []domain.LadoCheckCommand{}, CheckTimeoutMinutes: domain.LadoCheckTimeoutDefault, OverlapWait: false}
+	return domain.LadoProjectSettings{ProjectID: projectID, MaxConcurrent: 1, CheckCommands: []domain.LadoCheckCommand{}, CheckTimeoutMinutes: domain.LadoCheckTimeoutDefault, OverlapWait: false, RunDirectly: true}
 }
 
 func (f *fakeStore) save(settings domain.LadoProjectSettings) {
@@ -164,6 +164,18 @@ func (f *fakeStore) CreateLadoNewProjectSettings(_ context.Context, projectID do
 	settings.LadoMode, settings.MaxConcurrent, settings.UpdatedAt = ladoMode, maxConcurrent, at
 	f.save(settings)
 	return true, nil
+}
+
+func (f *fakeStore) SetLadoProjectRunDirectly(_ context.Context, projectID domain.ProjectID, on bool, event domain.LadoAuditEvent) error {
+	f.writes++
+	if f.writeErr != nil {
+		return f.writeErr
+	}
+	settings := f.stored(projectID)
+	settings.RunDirectly, settings.UpdatedAt = on, event.At
+	f.save(settings)
+	f.events = append(f.events, event)
+	return nil
 }
 
 // presence answers as a verified proof for the action it is asked about.
@@ -723,4 +735,34 @@ func TestUpdateSettingsChangesTheOverlapWait(t *testing.T) {
 	bad := []string{"/etc/**"}
 	_, err = svc.UpdateSettings(ctx, "mer", ladoproject.UpdateInput{OverlapIgnore: &bad})
 	requireAPIError(t, err, apierr.KindInvalid, "LADO_OVERLAP_IGNORE_INVALID")
+}
+
+// Run without plan review starts on and changes without presence, audited
+// as the API's; sending the value it has writes nothing.
+func TestUpdateSettingsChangesRunDirectly(t *testing.T) {
+	store := &fakeStore{}
+	svc := newService(store)
+	ctx := context.Background()
+	got, err := svc.Settings(ctx, "mer")
+	if err != nil || !got.RunDirectly {
+		t.Fatalf("defaults = %+v, %v; want run directly on", got, err)
+	}
+	got, err = svc.UpdateSettings(ctx, "mer", ladoproject.UpdateInput{RunDirectly: boolPtr(false), Presence: noPresence(t)})
+	if err != nil || got.RunDirectly {
+		t.Fatalf("UpdateSettings = %+v, %v; want run directly off", got, err)
+	}
+	if len(store.events) != 1 || store.events[0].Action != "project.run_directly_changed" || store.events[0].Actor != "api" {
+		t.Fatalf("events = %+v", store.events)
+	}
+	if _, err := svc.UpdateSettings(ctx, "mer", ladoproject.UpdateInput{RunDirectly: boolPtr(false)}); err != nil || store.writes != 1 {
+		t.Fatalf("the same value wrote again: %v, %d writes", err, store.writes)
+	}
+	store.writeErr = errors.New("disk full")
+	_, err = svc.UpdateSettings(ctx, "mer", ladoproject.UpdateInput{RunDirectly: boolPtr(true)})
+	requireAPIError(t, err, apierr.KindInternal, "LADO_SETTINGS_UPDATE_FAILED")
+	store.writeErr = nil
+	got, err = svc.UpdateSettings(ctx, "mer", ladoproject.UpdateInput{RunDirectly: boolPtr(true)})
+	if err != nil || !got.RunDirectly || len(store.events) != 2 {
+		t.Fatalf("turning it on again = %+v, %v; %d events", got, err, len(store.events))
+	}
 }

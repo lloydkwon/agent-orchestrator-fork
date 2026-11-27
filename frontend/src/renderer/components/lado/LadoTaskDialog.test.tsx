@@ -20,6 +20,7 @@ vi.mock("../../lib/lado", async (original) => ({
 	fetchLadoTaskView: vi.fn(),
 	fetchLadoPlan: vi.fn(),
 	requestLadoPlan: vi.fn(),
+	planLadoTaskFromIssue: vi.fn(),
 	approveLadoPlan: vi.fn(),
 	fetchLadoEffective: vi.fn(),
 	fetchLadoRules: vi.fn(),
@@ -69,7 +70,7 @@ const comments: lado.LadoIssueComment[] = [
 function view(overrides: Partial<lado.LadoTaskView> = {}): lado.LadoTaskView {
 	return {
 		task,
-		issue: { title: "Add login", body: "The plan is in the comments.", state: "open", url: task.issue.url },
+		issue: { title: "Add login", body: "The plan is in the comments.", state: "open", url: task.issue.url, sha256: "f".repeat(64) },
 		comments,
 		issueChangedSincePlan: false,
 		history: { requests: [], revisions: [], approvals: [], critiques: [] },
@@ -193,6 +194,55 @@ test("requests a plan, then waits for it", async () => {
 	await waitFor(() => expect(lado.requestLadoPlan).toHaveBeenCalledWith("lado-task-1", {}));
 	expect(await within(dialog).findByText("Waiting for the orchestrator's plan…")).toBeInTheDocument();
 	expect(within(dialog).getByRole("button", { name: "Request a plan" })).toBeDisabled();
+});
+
+// LADO fork: running a task without plan review.
+test("runs a task from its issue: LADO pins the plan, then the desktop app approves it with the rules now", async () => {
+	vi.mocked(lado.fetchLadoTaskView).mockResolvedValue(view());
+	vi.mocked(lado.planLadoTaskFromIssue).mockResolvedValue({ ...revision, source: "issue" });
+	vi.mocked(lado.approveLadoPlan).mockResolvedValue(approval);
+	renderDialog();
+	const dialog = await screen.findByTestId("lado-task-dialog");
+
+	fireEvent.click(await within(dialog).findByRole("button", { name: "Run from the issue" }));
+	await waitFor(() => expect(lado.approveLadoPlan).toHaveBeenCalledWith("lado-plan-1", revision.sha256, "e".repeat(64)));
+	// The plan is made only from the issue text the view showed.
+	expect(lado.planLadoTaskFromIssue).toHaveBeenCalledWith("lado-task-1", "f".repeat(64));
+	expect(lado.requestLadoPlan).not.toHaveBeenCalled();
+	expect(vi.mocked(lado.planLadoTaskFromIssue).mock.invocationCallOrder[0]).toBeLessThan(vi.mocked(lado.approveLadoPlan).mock.invocationCallOrder[0]);
+});
+
+test("a plan from the issue that LADO cannot make says why and asks for no approval", async () => {
+	vi.mocked(lado.fetchLadoTaskView).mockResolvedValue(view());
+	vi.mocked(lado.planLadoTaskFromIssue).mockRejectedValue(new lado.LadoApiError("LADO could not tell which branch the worker starts from.", "LADO_ISSUE_PLAN_BASE_UNKNOWN"));
+	renderDialog();
+	const dialog = await screen.findByTestId("lado-task-dialog");
+
+	fireEvent.click(await within(dialog).findByRole("button", { name: "Run from the issue" }));
+	expect(await within(dialog).findByText("LADO could not tell which branch the worker starts from. Check the project's default branch, then try again.")).toBeInTheDocument();
+	expect(lado.approveLadoPlan).not.toHaveBeenCalled();
+	expect(within(dialog).getByRole("button", { name: "Request a plan" })).toBeEnabled();
+});
+
+test("a task whose issue could not be read cannot run from it", async () => {
+	vi.mocked(lado.fetchLadoTaskView).mockResolvedValue(view({ issue: undefined, issueReadError: "github tracker: 502" }));
+	renderDialog();
+	const dialog = await screen.findByTestId("lado-task-dialog");
+
+	expect(await within(dialog).findByRole("button", { name: "Run from the issue" })).toBeDisabled();
+	expect(within(dialog).getByRole("button", { name: "Request a plan" })).toBeEnabled();
+});
+
+test("a plan LADO wrote from the issue says it had no plan review", async () => {
+	const fromIssue = planned({ revision: { ...revision, source: "issue" }, plan: { ...planned().plan, planSource: "issue" } });
+	vi.mocked(lado.fetchLadoTaskView).mockResolvedValue(plannedView(fromIssue));
+	vi.mocked(lado.fetchLadoPlan).mockResolvedValue(fromIssue);
+	renderDialog();
+	const dialog = await screen.findByTestId("lado-task-dialog");
+
+	const plan = await within(dialog).findByTestId("lado-plan");
+	expect(within(plan).getByText("Written by LADO from the issue, without plan review")).toBeInTheDocument();
+	expect(within(plan).queryByText("Written from the issue")).not.toBeInTheDocument();
 });
 
 // LADO fork: plan workers (docs/LJY-PRD/TDD.md §5.1).

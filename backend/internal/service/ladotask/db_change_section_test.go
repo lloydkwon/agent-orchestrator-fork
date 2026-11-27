@@ -138,7 +138,7 @@ func TestDBChangeSectionLeftOut(t *testing.T) {
 	}
 	// The orchestrator's instructions without the section are the LADO
 	// section as it was, with its sentence on SQL the developer asks for.
-	if got := standing(t, base, domain.KindOrchestrator, "demo", orchestrator); got != orchestratorSection ||
+	if got := standing(t, base, domain.KindOrchestrator, "demo", orchestrator); got != orchestratorSection(true) ||
 		!strings.Contains(got, "such as a merge, a deploy check or applying SQL in production") {
 		t.Fatalf("orchestrator instructions without settings:\n%s", got)
 	}
@@ -190,7 +190,7 @@ func TestDBChangeSectionLeftOut(t *testing.T) {
 	var logged bytes.Buffer
 	dbChanges.err = errors.New("disk on fire")
 	source.Log = slog.New(slog.NewTextHandler(&logged, nil))
-	if got := standing(t, source, domain.KindOrchestrator, "demo", orchestrator); got != orchestratorSection {
+	if got := standing(t, source, domain.KindOrchestrator, "demo", orchestrator); got != orchestratorSection(true) {
 		t.Fatalf("a failed read = %q; want the LADO section without database changes", got)
 	}
 	if !strings.Contains(logged.String(), "disk on fire") {

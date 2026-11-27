@@ -99,7 +99,7 @@ const failLadoPlanRequest = `-- name: FailLadoPlanRequest :execrows
 UPDATE lado_plan_requests
 SET failed_at = ?,
     delivery_error = ?
-WHERE id = ? AND kind = 'orchestrator' AND delivered_at IS NULL AND failed_at IS NULL
+WHERE id = ? AND kind IN ('orchestrator', 'issue') AND delivered_at IS NULL AND failed_at IS NULL
 `
 
 type FailLadoPlanRequestParams struct {
@@ -108,6 +108,8 @@ type FailLadoPlanRequestParams struct {
 	ID            string
 }
 
+// An orchestrator request LADO gave up delivering, or an issue request
+// whose plan LADO could not pin.
 func (q *Queries) FailLadoPlanRequest(ctx context.Context, arg FailLadoPlanRequestParams) (int64, error) {
 	result, err := q.db.ExecContext(ctx, failLadoPlanRequest, arg.FailedAt, arg.DeliveryError, arg.ID)
 	if err != nil {

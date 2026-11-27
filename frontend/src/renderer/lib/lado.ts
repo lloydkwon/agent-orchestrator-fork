@@ -285,8 +285,15 @@ export async function updateLadoCheckTimeout(projectId: string, minutes: number)
 }
 
 /** Changes how many executions run at once in the project; it needs no confirmation. */
-export async function updateLadoProjectSettings(projectId: string, input: { maxConcurrent: number }): Promise<LadoProjectSettings> {
-	return putLadoProjectSettings(projectId, { maxConcurrent: input.maxConcurrent }, "Could not change the project's LADO settings");
+/**
+ * Changes the project's cap on running tasks, or whether New Task starts
+ * with Run without plan review on; neither needs presence.
+ */
+export async function updateLadoProjectSettings(
+	projectId: string,
+	input: { maxConcurrent?: number; runDirectly?: boolean },
+): Promise<LadoProjectSettings> {
+	return putLadoProjectSettings(projectId, input, "Could not change the project's LADO settings");
 }
 
 /** Whether a task waits for another's overlapping run, and the globs whose overlap does not count. */
@@ -479,6 +486,21 @@ export async function requestLadoPlan(
 		},
 	});
 	if (error) throw ladoError(error, "Could not request a plan");
+	return data;
+}
+
+/**
+ * Has LADO write the task's plan from its issue and pin it at once, without
+ * a plan worker. issueSha256 is the issue text the developer read (the task
+ * view's or the created task's issue.sha256); LADO refuses an issue that
+ * changed since. The revision still needs the developer's approval.
+ */
+export async function planLadoTaskFromIssue(taskId: string, issueSha256: string): Promise<LadoPlanRevision> {
+	const { data, error } = await apiClient.POST("/api/v1/lado/tasks/{taskId}/issue-plan", {
+		params: { path: { taskId } },
+		body: { issueSha256 },
+	});
+	if (error) throw ladoError(error, "Could not make a plan from the issue");
 	return data;
 }
 

@@ -62,6 +62,50 @@ func TestLadoAPI_RequestPlan(t *testing.T) {
 	}
 }
 
+// A plan from the issue answers with the pinned revision the developer
+// approves next; the service's refusal reaches the app as sent.
+func TestLadoAPI_PlanFromIssue(t *testing.T) {
+	rev := domain.LadoPlanRevision{
+		ID: "lado-plan-1", TaskID: "lado-task-1", RequestID: "req-1", Number: 1, Source: domain.LadoPlanRevisionSourceIssue,
+		SHA256: strings.Repeat("a", 64), BaseRef: "main", CreatedAt: ladoTaskTime,
+	}
+	svc := &fakeLadoTaskService{task: sampleLadoTask(), revision: rev}
+	srv := newLadoTestServer(t, httpd.APIDeps{LadoTasks: svc})
+
+	issue := strings.Repeat("b", 64)
+	body, status, _ := doRequest(t, srv, "POST", "/api/v1/lado/tasks/lado-task-1/issue-plan", `{"issueSha256":"`+issue+`"}`)
+	if status != http.StatusCreated {
+		t.Fatalf("status = %d, body %s", status, body)
+	}
+	got := decodeLadoJSON[controllers.LadoPlanRevisionResponse](t, body)
+	if got.ID != "lado-plan-1" || got.Source != "issue" || !got.Valid || got.SHA256 != rev.SHA256 {
+		t.Fatalf("response = %+v", got)
+	}
+	if svc.gotIssuePlan != (ladotask.IssuePlanInput{TaskID: "lado-task-1", IssueSHA256: issue}) {
+		t.Fatalf("service got %+v", svc.gotIssuePlan)
+	}
+
+	svc.err = apierr.Conflict("LADO_ISSUE_CHANGED_SINCE_READ", "The issue changed since you read it. Read it again, then run it.", nil)
+	body, status, _ = doRequest(t, srv, "POST", "/api/v1/lado/tasks/lado-task-1/issue-plan", `{"issueSha256":"`+issue+`"}`)
+	if status != http.StatusConflict || !strings.Contains(string(body), "LADO_ISSUE_CHANGED_SINCE_READ") {
+		t.Fatalf("status = %d, body %s; want 409 LADO_ISSUE_CHANGED_SINCE_READ", status, body)
+	}
+}
+
+// An issue request names no session, so its placeholder never reaches the app.
+func TestLadoAPI_IssueRequestHasNoSession(t *testing.T) {
+	task := sampleLadoTask()
+	req := domain.LadoPlanRequest{ID: "req-1", TaskID: "lado-task-1", Kind: domain.LadoPlanRequestIssue, SessionID: domain.LadoPlanRequestIssueSession("req-1"), RequestedAt: ladoTaskTime}
+	svc := &fakeLadoTaskService{task: task, history: ladotask.PlanHistory{Requests: []domain.LadoPlanRequest{req}}}
+	srv := newLadoTestServer(t, httpd.APIDeps{LadoTasks: svc})
+
+	body, status, _ := doRequest(t, srv, "GET", "/api/v1/lado/tasks/lado-task-1/plans", "")
+	history := decodeLadoJSON[controllers.LadoPlanHistoryResponse](t, body)
+	if status != http.StatusOK || len(history.Requests) != 1 || history.Requests[0].Kind != "issue" || history.Requests[0].SessionID != "" {
+		t.Fatalf("history = %+v (status %d)", history, status)
+	}
+}
+
 func TestLadoAPI_PlanRevisionAndHistory(t *testing.T) {
 	rev := domain.LadoPlanRevision{
 		ID: "lado-plan-1", TaskID: "lado-task-1", RequestID: "req-1", Number: 1, Source: "agent", SHA256: strings.Repeat("a", 64),

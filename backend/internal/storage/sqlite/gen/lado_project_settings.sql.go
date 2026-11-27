@@ -31,7 +31,7 @@ func (q *Queries) GetLadoProjectChecks(ctx context.Context, projectID string) (G
 
 const getLadoProjectSettings = `-- name: GetLadoProjectSettings :one
 SELECT project_id, lado_mode, updated_at, max_concurrent, check_commands, check_timeout_minutes,
-    overlap_wait, overlap_ignore_json
+    overlap_wait, overlap_ignore_json, run_directly
 FROM lado_project_settings
 WHERE project_id = ?
 `
@@ -48,6 +48,7 @@ func (q *Queries) GetLadoProjectSettings(ctx context.Context, projectID string) 
 		&i.CheckTimeoutMinutes,
 		&i.OverlapWait,
 		&i.OverlapIgnoreJson,
+		&i.RunDirectly,
 	)
 	return i, err
 }
@@ -146,6 +147,25 @@ func (q *Queries) UpsertLadoProjectOverlap(ctx context.Context, arg UpsertLadoPr
 	return err
 }
 
+const upsertLadoProjectRunDirectly = `-- name: UpsertLadoProjectRunDirectly :exec
+INSERT INTO lado_project_settings (project_id, lado_mode, overlap_wait, run_directly, updated_at)
+VALUES (?, 0, 0, ?, ?)
+ON CONFLICT (project_id) DO UPDATE SET run_directly = excluded.run_directly, updated_at = excluded.updated_at
+`
+
+type UpsertLadoProjectRunDirectlyParams struct {
+	ProjectID   string
+	RunDirectly int64
+	UpdatedAt   time.Time
+}
+
+// A project without a settings row gets one with LADO mode off and
+// overlap_wait 0 (#101).
+func (q *Queries) UpsertLadoProjectRunDirectly(ctx context.Context, arg UpsertLadoProjectRunDirectlyParams) error {
+	_, err := q.db.ExecContext(ctx, upsertLadoProjectRunDirectly, arg.ProjectID, arg.RunDirectly, arg.UpdatedAt)
+	return err
+}
+
 const upsertLadoProjectSettings = `-- name: UpsertLadoProjectSettings :one
 INSERT INTO lado_project_settings (project_id, lado_mode, overlap_wait, updated_at)
 VALUES (?, ?, 0, ?)
@@ -153,7 +173,7 @@ ON CONFLICT (project_id) DO UPDATE SET
     lado_mode = excluded.lado_mode,
     updated_at = excluded.updated_at
 RETURNING project_id, lado_mode, updated_at, max_concurrent, check_commands, check_timeout_minutes,
-    overlap_wait, overlap_ignore_json
+    overlap_wait, overlap_ignore_json, run_directly
 `
 
 type UpsertLadoProjectSettingsParams struct {
@@ -176,6 +196,7 @@ func (q *Queries) UpsertLadoProjectSettings(ctx context.Context, arg UpsertLadoP
 		&i.CheckTimeoutMinutes,
 		&i.OverlapWait,
 		&i.OverlapIgnoreJson,
+		&i.RunDirectly,
 	)
 	return i, err
 }

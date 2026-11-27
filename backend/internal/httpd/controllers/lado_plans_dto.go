@@ -23,7 +23,7 @@ type LadoPlanRevisionSummaryResponse struct {
 	ID        string    `json:"id"`
 	Number    int       `json:"number" description:"The task's revisions count from 1."`
 	SHA256    string    `json:"sha256" description:"Hash of the pinned plan file. An approval binds to it."`
-	Source    string    `json:"source" enum:"agent,user" description:"Who wrote the version: the orchestrator, or a person editing it in the artifact viewer."`
+	Source    string    `json:"source" enum:"agent,user,issue" description:"Who wrote the version: the orchestrator, a person editing it in the artifact viewer, or LADO from the issue itself."`
 	Valid     bool      `json:"valid" description:"False when the plan has problems; such a plan cannot be approved."`
 	CreatedAt time.Time `json:"createdAt"`
 }
@@ -56,7 +56,7 @@ type LadoPlanRevisionResponse struct {
 	TaskID              string                    `json:"taskId"`
 	RequestID           string                    `json:"requestId"`
 	Number              int                       `json:"number"`
-	Source              string                    `json:"source" enum:"agent,user"`
+	Source              string                    `json:"source" enum:"agent,user,issue" description:"Who wrote the plan: the agent, a person editing it in the artifact viewer, or LADO from the issue itself."`
 	SHA256              string                    `json:"sha256"`
 	BaseRef             string                    `json:"baseRef,omitempty"`
 	BaseSHA             string                    `json:"baseSha,omitempty" description:"The commit base_ref named when LADO pinned the revision."`
@@ -74,8 +74,8 @@ type LadoPlanRevisionResponse struct {
 type LadoPlanRequestResponse struct {
 	ID               string     `json:"id"`
 	TaskID           string     `json:"taskId"`
-	Kind             string     `json:"kind" enum:"orchestrator,worker" description:"Who writes the plan: a plan worker, or, for a request made before plan workers, the orchestrator."`
-	SessionID        string     `json:"sessionId" description:"The session that writes the plan: the orchestrator asked, or the plan worker's designer; empty while a plan worker waits to start."`
+	Kind             string     `json:"kind" enum:"orchestrator,worker,issue" description:"Who writes the plan: a plan worker, LADO from the issue itself without a plan worker, or, for a request made before plan workers, the orchestrator."`
+	SessionID        string     `json:"sessionId" description:"The session that writes the plan: the orchestrator asked, or the plan worker's designer; empty while a plan worker waits to start, and for a plan from the issue."`
 	Phase            string     `json:"phase,omitempty" enum:"waiting,designing,critiquing,revising,submitted,fixing,done,failed,replaced" description:"Where a plan worker request is; omitted for a request to an orchestrator."`
 	WaitingReason    string     `json:"waitingReason,omitempty" enum:"plan_worker_capacity,memory_tight,account_limited,agent_unavailable"`
 	FailureCode      string     `json:"failureCode,omitempty" enum:"plan_worker_spawn_failed,plan_worker_no_plan,plan_worker_timed_out,plan_worker_agent_unsupported,replaced"`
@@ -169,6 +169,12 @@ type CreateLadoPlanRequestRequest struct {
 	Note            string `json:"note,omitempty" description:"What to change in the latest revision; makes this a change request."`
 }
 
+// CreateLadoIssuePlanRequest asks LADO to write the task's plan from its
+// issue, from the issue text the developer read.
+type CreateLadoIssuePlanRequest struct {
+	IssueSHA256 string `json:"issueSha256" description:"The sha256 of the issue's title and body as the developer read them (the task view's issue.sha256, or the created task's issue.sha256); LADO refuses when the issue changed since."`
+}
+
 // ApproveLadoPlanRequest approves one revision under the rules the developer
 // reviewed. It needs a human-presence proof in X-LADO-Presence, which the
 // desktop app adds after the developer confirms.
@@ -179,10 +185,11 @@ type ApproveLadoPlanRequest struct {
 
 // LadoIssueTextResponse is a task's issue as read for the task view.
 type LadoIssueTextResponse struct {
-	Title string `json:"title"`
-	Body  string `json:"body"`
-	State string `json:"state" enum:"open,in_progress,review,done,cancelled"`
-	URL   string `json:"url"`
+	Title  string `json:"title"`
+	Body   string `json:"body"`
+	State  string `json:"state" enum:"open,in_progress,review,done,cancelled"`
+	URL    string `json:"url"`
+	SHA256 string `json:"sha256,omitempty" description:"Hash of this title and body; a plan from the issue binds to it."`
 }
 
 // LadoIssueCommentResponse is one comment on a task's issue.

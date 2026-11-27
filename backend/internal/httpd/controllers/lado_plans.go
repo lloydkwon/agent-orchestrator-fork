@@ -31,6 +31,7 @@ type LadoPresence interface {
 
 const (
 	ladoTaskPlanRequestsPath = "/api/v1/lado/tasks/{taskId}/plan-requests"
+	ladoTaskIssuePlanPath    = "/api/v1/lado/tasks/{taskId}/issue-plan"
 	ladoTaskPlansPath        = "/api/v1/lado/tasks/{taskId}/plans"
 	ladoPlanPath             = "/api/v1/lado/plans/{revisionId}"
 	ladoPlanApprovePath      = "/api/v1/lado/plans/{revisionId}/approve"
@@ -56,6 +57,26 @@ func (c *LadoController) requestPlan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	envelope.WriteJSON(w, http.StatusCreated, ladoPlanRequestResponse(created))
+}
+
+// planFromIssue has LADO write the task's plan from the issue text the
+// developer read and pin it at once, without a plan worker; the developer
+// approves it next.
+func (c *LadoController) planFromIssue(w http.ResponseWriter, r *http.Request) {
+	if c.Tasks == nil {
+		apispec.NotImplemented(w, r, "POST", ladoTaskIssuePlanPath)
+		return
+	}
+	var req CreateLadoIssuePlanRequest
+	if !decodeLadoBody(w, r, maxLadoSmallBody, &req) {
+		return
+	}
+	rev, err := c.Tasks.PlanFromIssue(r.Context(), ladotask.IssuePlanInput{TaskID: ladoTaskID(r), IssueSHA256: req.IssueSHA256})
+	if err != nil {
+		envelope.WriteError(w, r, err)
+		return
+	}
+	envelope.WriteJSON(w, http.StatusCreated, ladoPlanRevisionResponse(rev))
 }
 
 func (c *LadoController) listPlans(w http.ResponseWriter, r *http.Request) {
@@ -184,7 +205,7 @@ func (c *LadoController) getTaskView(ctx context.Context, id domain.LadoTaskID) 
 		History:               ladoPlanHistoryResponse(view.History),
 	}
 	if view.IssueReadError == "" && view.Task.CancelledAt.IsZero() {
-		resp.Issue = &LadoIssueTextResponse{Title: view.Issue.Title, Body: view.Issue.Body, State: string(view.Issue.State), URL: view.Issue.URL}
+		resp.Issue = &LadoIssueTextResponse{Title: view.Issue.Title, Body: view.Issue.Body, State: string(view.Issue.State), URL: view.Issue.URL, SHA256: view.IssueSHA256}
 		snapshot, _ := domain.NewLadoIssueSnapshot(view.Task.IssueRef, view.Issue.Title, view.Issue.Body, view.Comments)
 		for _, comment := range view.Comments {
 			resp.Comments = append(resp.Comments, LadoIssueCommentResponse{
@@ -253,8 +274,12 @@ func ladoPlanRevisionWithMetrics(rev domain.LadoPlanRevision, metrics *domain.La
 
 func ladoPlanRequestResponse(req domain.LadoPlanRequest) LadoPlanRequestResponse {
 	session := req.SessionID
-	if req.IsWorker() {
+	switch {
+	case req.IsWorker():
 		session = req.WorkerSession()
+	case req.FromIssue():
+		// The placeholder names no session.
+		session = ""
 	}
 	return LadoPlanRequestResponse{
 		ID:               string(req.ID),

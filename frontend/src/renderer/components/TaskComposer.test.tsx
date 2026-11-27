@@ -2367,7 +2367,7 @@ describe("TaskComposer in a LADO project", () => {
 		projectId: "project-a",
 		repository: "github:acme/demo",
 		state: "draft",
-		issue: { ref: "github:acme/demo#12", number: 12, title: "Add login", state: "open", url: "https://github.com/acme/demo/issues/12", observedAt: "2026-10-19T09:00:00Z" },
+		issue: { ref: "github:acme/demo#12", number: 12, title: "Add login", state: "open", url: "https://github.com/acme/demo/issues/12", observedAt: "2026-10-19T09:00:00Z", sha256: "f".repeat(64) },
 		createdAt: "2026-10-19T09:00:00Z",
 	};
 
@@ -2450,6 +2450,113 @@ describe("TaskComposer in a LADO project", () => {
 			body: expect.objectContaining({ projectId: "project-a", repository: "github:acme/front", text: "Fix the login form" }),
 		});
 		expect(window.localStorage.getItem("lado.issueRepository.project-a")).toBe("github:acme/front");
+	});
+
+	// Run without plan review: the new issue becomes the plan, approved at once.
+	const issuePlan = { id: "lado-plan-1", taskId: "lado-task-1", requestId: "req-1", number: 1, source: "issue", sha256: "a".repeat(64), issueSnapshotSha256: "1".repeat(64), valid: true, problems: [], createdAt: "2026-10-19T09:01:00Z" };
+	const runDirectly = () => screen.getByRole("switch", { name: "Run without plan review" });
+	const postedPaths = () => h.post.mock.calls.map(([path]) => path);
+
+	it("runs the new issue without plan review: creates it, has LADO plan from it and approves that plan", async () => {
+		const get = h.get.getMockImplementation();
+		h.get.mockImplementation(async (path: string, init?: unknown) => path === "/api/v1/lado/effective"
+			? { data: { snapshotSha256: "e".repeat(64) } }
+			: get?.(path, init));
+		h.post.mockImplementation(async (path: string) => {
+			if (path === "/api/v1/lado/tasks") return { data: ladoTask };
+			if (path === "/api/v1/lado/tasks/{taskId}/issue-plan") return { data: issuePlan };
+			if (path === "/api/v1/lado/plans/{revisionId}/approve") return { data: { id: "a-1", revisionId: "lado-plan-1", taskId: "lado-task-1", sha256: issuePlan.sha256, approvedAt: "2026-10-19T09:02:00Z" } };
+			return { data: {} };
+		});
+		const onIssueTasksCreated = vi.fn();
+		render(<Wrap><TaskComposer projectId="project-a" onCreated={vi.fn()} onIssueTasksCreated={onIssueTasksCreated} /></Wrap>);
+
+		await waitFor(() => expect(createIssue()).toBeEnabled());
+		expect(runDirectly()).not.toBeChecked();
+		fireEvent.click(runDirectly());
+		fireEvent.change(task(), { target: { value: "Add logout" } });
+		fireEvent.click(screen.getByRole("button", { name: "Create issue and run" }));
+
+		await waitFor(() => expect(onIssueTasksCreated).toHaveBeenCalledWith("project-a"));
+		expect(postedPaths()).toEqual(["/api/v1/lado/tasks", "/api/v1/lado/tasks/{taskId}/issue-plan", "/api/v1/lado/plans/{revisionId}/approve"]);
+		// The plan is made only from the text this composer created the issue with.
+		expect(h.post).toHaveBeenCalledWith("/api/v1/lado/tasks/{taskId}/issue-plan", { params: { path: { taskId: "lado-task-1" } }, body: { issueSha256: "f".repeat(64) } });
+		expect(h.post).toHaveBeenCalledWith("/api/v1/lado/plans/{revisionId}/approve", {
+			params: { path: { revisionId: "lado-plan-1" } },
+			body: { sha256: issuePlan.sha256, policySha256: "e".repeat(64) },
+		});
+	});
+
+	it("keeps the composer when the run fails after the issue was made, and retries without a second issue", async () => {
+		let planAttempts = 0;
+		h.post.mockImplementation(async (path: string) => {
+			if (path === "/api/v1/lado/tasks") return { data: ladoTask };
+			if (path === "/api/v1/lado/tasks/{taskId}/issue-plan") {
+				planAttempts++;
+				return planAttempts === 1
+					? { error: { code: "LADO_ISSUE_PLAN_BASE_UNKNOWN", message: "LADO could not tell which branch the worker starts from." } }
+					: { data: { ...issuePlan, valid: false } };
+			}
+			return { data: {} };
+		});
+		const onIssueTasksCreated = vi.fn();
+		render(<Wrap><TaskComposer projectId="project-a" onCreated={vi.fn()} onIssueTasksCreated={onIssueTasksCreated} /></Wrap>);
+
+		await waitFor(() => expect(createIssue()).toBeEnabled());
+		fireEvent.click(runDirectly());
+		fireEvent.change(task(), { target: { value: "Add logout" } });
+		fireEvent.click(screen.getByRole("button", { name: "Create issue and run" }));
+
+		expect(await screen.findByText(
+			"The issue and task were created, but the task could not run yet: LADO could not tell which branch the worker starts from. Check the project's default branch, then try again.",
+		)).toBeInTheDocument();
+		expect(onIssueTasksCreated).not.toHaveBeenCalled();
+
+		// Turning the switch off and submitting the same text closes without a second issue.
+		fireEvent.click(runDirectly());
+		fireEvent.click(createIssue());
+		await waitFor(() => expect(onIssueTasksCreated).toHaveBeenCalledWith("project-a"));
+		expect(postedPaths().filter((path) => path === "/api/v1/lado/tasks")).toHaveLength(1);
+		expect(planAttempts).toBe(1);
+	});
+
+	it("makes a new issue when the same text goes out with another agent after a failed run", async () => {
+		h.post.mockImplementation(async (path: string) => {
+			if (path === "/api/v1/lado/tasks") return { data: ladoTask };
+			if (path === "/api/v1/lado/tasks/{taskId}/issue-plan") return { error: { code: "LADO_ISSUE_PLAN_BASE_UNKNOWN", message: "LADO could not tell which branch the worker starts from." } };
+			return { data: {} };
+		});
+		render(<Wrap><TaskComposer projectId="project-a" onCreated={vi.fn()} onIssueTasksCreated={vi.fn()} /></Wrap>);
+
+		await waitFor(() => expect(createIssue()).toBeEnabled());
+		fireEvent.click(runDirectly());
+		fireEvent.change(task(), { target: { value: "Add logout" } });
+		fireEvent.click(screen.getByRole("button", { name: "Create issue and run" }));
+		await screen.findByText(/The issue and task were created, but the task could not run yet/);
+
+		// The retry belongs to that request only: another agent is another task.
+		fireEvent.click(screen.getByTestId("agent-field"));
+		fireEvent.click(screen.getByRole("button", { name: "Create issue and run" }));
+		await waitFor(() => expect(postedPaths().filter((path) => path === "/api/v1/lado/tasks")).toHaveLength(2));
+	});
+
+	it("starts with run without plan review on when the project says so, and turning it off creates the issue only", async () => {
+		const get = h.get.getMockImplementation();
+		h.get.mockImplementation(async (path: string, init?: unknown) => path === "/api/v1/lado/projects/{projectId}/settings"
+			? { data: { projectId: "project-a", ladoMode: true, runDirectly: true } }
+			: get?.(path, init));
+		h.post.mockImplementation(async (path: string) => path === "/api/v1/lado/tasks" ? { data: ladoTask } : { data: {} });
+		const onIssueTasksCreated = vi.fn();
+		render(<Wrap><TaskComposer projectId="project-a" onCreated={vi.fn()} onIssueTasksCreated={onIssueTasksCreated} /></Wrap>);
+
+		await waitFor(() => expect(screen.getByRole("button", { name: "Create issue and run" })).toBeEnabled());
+		expect(runDirectly()).toBeChecked();
+		fireEvent.click(runDirectly());
+		fireEvent.change(task(), { target: { value: "Add logout" } });
+		fireEvent.click(createIssue());
+
+		await waitFor(() => expect(onIssueTasksCreated).toHaveBeenCalledWith("project-a"));
+		expect(postedPaths()).toEqual(["/api/v1/lado/tasks"]);
 	});
 
 	it("opens the issue picker", async () => {
