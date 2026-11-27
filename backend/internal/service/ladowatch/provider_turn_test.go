@@ -160,3 +160,17 @@ func TestStallCountsFromTheProviderTurnEnd(t *testing.T) {
 		t.Fatalf("stall watch = %+v", w.LadoWatchStall)
 	}
 }
+
+// 자율 턴보다 먼저 들어와 아직 돌지 않은 사용자 턴이 있으면 워커는 쉬지 않는다:
+// 자율 턴이 끝나도 그 프롬프트가 기다린다.
+func TestQueuedPromptBeforeAProviderTurnIsNotResting(t *testing.T) {
+	f := newFixture(t)
+	f.convs.set(worker1, domain.ConversationTurn{ID: "turn-queued", State: domain.TurnStateQueued, RequestedAt: t0})
+	f.providerTurn(domain.TurnStateCompleted, t0.Add(10*time.Minute))
+	f.rest(t0.Add(10 * time.Minute))
+	stall := domain.LadoWatchDefaults().Stall()
+	f.tick(t0.Add(stall + time.Hour))
+	if len(f.msgs.texts()) != 0 || f.watch().StallState != domain.LadoStallNone {
+		t.Fatalf("a worker with a queued prompt stalled: sent %v, watch %+v", f.msgs.texts(), f.watch().LadoWatchStall)
+	}
+}
