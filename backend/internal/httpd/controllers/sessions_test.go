@@ -5014,6 +5014,9 @@ func TestSessionsAPI_LastUserMessagePreviewIsOneCappedLine(t *testing.T) {
 		{name: "absent prompt is omitted", prompt: "", want: ""},
 		{name: "line breaks and runs of spaces collapse", prompt: "  사이드바  구분\n\n각 세션 밑에\t요약  ", want: "사이드바 구분 각 세션 밑에 요약"},
 		{name: "long prompt is cut on a rune boundary", prompt: long, want: strings.Repeat("가", 160)},
+		// 이슈 #9: 고치기 전에 저장된 백그라운드 완료 알림은 둘째 줄에 보이지 않는다.
+		{name: "stored provider notice is omitted", prompt: "<task-notification>\n<task-id>b1</task-id>\n<output-file>/tmp/b1.output</output-file>\n</task-notification>", want: ""},
+		{name: "prompt mentioning the tag stays", prompt: "what does <task-notification> mean?", want: "what does <task-notification> mean?"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			svc := newFakeSessionService()

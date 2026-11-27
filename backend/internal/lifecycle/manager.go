@@ -827,11 +827,16 @@ retryProjection:
 				}
 				break
 			}
-			checkpoint.LatestUserPrompt = s.LatestUserPrompt
-			if promptAt.After(checkpoint.LatestUserPromptAt) {
-				// Owner changes can carry skewed clocks. Preserve the last-human
-				// high-water time while replacing all checkpoint text/provenance.
-				checkpoint.LatestUserPromptAt = promptAt
+			// 이슈 #9: Claude Code 가 스스로 넣은 알림(<task-notification>)·세션 사이
+			// 전달글도 이 훅으로 들어온다. 턴 경계·활동·네이티브 증거는 사람 프롬프트와
+			// 똑같이 다루되, "사람이 마지막으로 시킨 일"인 글과 그 시각은 그대로 둔다.
+			if !domain.IsProviderInjectedPrompt(s.LatestUserPrompt) {
+				checkpoint.LatestUserPrompt = s.LatestUserPrompt
+				if promptAt.After(checkpoint.LatestUserPromptAt) {
+					// Owner changes can carry skewed clocks. Preserve the last-human
+					// high-water time while replacing all checkpoint text/provenance.
+					checkpoint.LatestUserPromptAt = promptAt
+				}
 			}
 			checkpoint.LatestAssistantUpdate = ""
 			checkpoint.LatestAssistantUpdateAt = time.Time{}
