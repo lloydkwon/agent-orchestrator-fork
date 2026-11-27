@@ -273,6 +273,16 @@ type Manager struct {
 	// steps is each session's recent tool calls for the memory window, from
 	// tool-use hooks (see steps.go). Guarded by mu.
 	steps map[domain.SessionID][]domain.SessionStep
+	// runtimeDeaths are the sessions this daemon ended because their runtime
+	// died (a reboot, a crash), not because someone ended them. Memory only: it
+	// lets an orchestrator that died this way come back instead of a new one
+	// (service/session SpawnOrchestrator); after a daemon restart it is empty
+	// and AO spawns a new orchestrator as before. Guarded by mu.
+	runtimeDeaths map[domain.SessionID]bool
+	// handEnds are the sessions someone began to end (a kill, a replacement)
+	// that have not been marked terminated yet. A runtime death seen in between
+	// is the end they asked for, not a crash. Guarded by mu.
+	handEnds map[domain.SessionID]bool
 	// pendingLaunches closes the small ordering gap between starting a supervised
 	// process and durably recording its generation in MarkSpawned. A hook from
 	// that exact generation waits on ready instead of being discarded as stale.
@@ -307,6 +317,8 @@ func New(store sessionStore, messenger ports.AgentMessenger, opts ...Option) *Ma
 		react:                       newReactionState(),
 		flights:                     map[domain.SessionID]*toolFlight{},
 		steps:                       map[domain.SessionID][]domain.SessionStep{},
+		runtimeDeaths:               map[domain.SessionID]bool{},
+		handEnds:                    map[domain.SessionID]bool{},
 		pendingLaunches:             map[domain.SessionID]pendingLaunch{},
 		steerActive:                 func(domain.AgentHarness) bool { return false },
 		startupSignalGatesInput:     func(domain.AgentHarness) bool { return false },
@@ -547,6 +559,9 @@ func (m *Manager) ApplyRuntimeObservation(ctx context.Context, id domain.Session
 		// m.mu — mutate holds it across this callback.
 		delete(m.flights, id)
 		delete(m.steps, id)
+		if !m.handEnds[id] {
+			m.runtimeDeaths[id] = true
+		}
 		terminated = true
 		return next, true
 	})
@@ -1670,6 +1685,9 @@ func (m *Manager) markSpawned(
 		}
 		now := m.clock()
 		if rec.IsTerminated {
+			// A relaunch ends what its runtime's death said about the session.
+			delete(m.runtimeDeaths, id)
+			delete(m.handEnds, id)
 			rec.CleanupGeneration++
 		}
 		rec.IsTerminated = false
@@ -1910,6 +1928,9 @@ func (m *Manager) MarkTerminated(ctx context.Context, id domain.SessionID) error
 			return err
 		}
 		if rec.IsTerminated {
+			// Ending a session whose runtime already died (a kill) makes it
+			// ended by hand.
+			m.forgetEnd(id)
 			m.reapSessionContainers(ctx, id)
 			return nil
 		}
@@ -1931,6 +1952,10 @@ func (m *Manager) MarkTerminated(ctx context.Context, id domain.SessionID) error
 		err = m.mutate(ctx, id, func(cur domain.SessionRecord, now time.Time) (domain.SessionRecord, bool) {
 			switch {
 			case cur.IsTerminated:
+				// The runtime's death may have ended it since the read above;
+				// this end is still by hand.
+				delete(m.runtimeDeaths, id)
+				delete(m.handEnds, id)
 				outcome = terminationAlreadyApplied
 				return cur, false
 			case cur.Metadata.RuntimeLaunchID != launchID:
@@ -1943,6 +1968,8 @@ func (m *Manager) MarkTerminated(ctx context.Context, id domain.SessionID) error
 				cur.Activity = domain.Activity{State: domain.ActivityExited, LastActivityAt: now}
 				delete(m.flights, id) // runs under m.mu (mutate holds it)
 				delete(m.steps, id)
+				delete(m.runtimeDeaths, id)
+				delete(m.handEnds, id)
 				outcome = terminationApplied
 				return cur, true
 			}
@@ -1963,6 +1990,31 @@ func (m *Manager) MarkTerminated(ctx context.Context, id domain.SessionID) error
 			continue
 		}
 	}
+}
+
+// TerminatedByRuntimeDeath reports whether this daemon ended the session
+// because its runtime died, and nobody ended or relaunched it since.
+func (m *Manager) TerminatedByRuntimeDeath(id domain.SessionID) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.runtimeDeaths[id]
+}
+
+// MarkEndingByHand records that someone began to end the session, before its
+// runtime is destroyed, so the death that follows is not taken for a crash even
+// when the end fails partway.
+func (m *Manager) MarkEndingByHand(id domain.SessionID) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.handEnds[id] = true
+	delete(m.runtimeDeaths, id)
+}
+
+func (m *Manager) forgetEnd(id domain.SessionID) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.runtimeDeaths, id)
+	delete(m.handEnds, id)
 }
 
 // reapSessionContainers is the container leg of #2652 (the container-owning
