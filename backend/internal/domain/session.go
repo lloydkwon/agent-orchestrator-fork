@@ -399,8 +399,15 @@ type SessionProvisionStep struct {
 // EligibleForChatHibernation is the cheap durable-fact filter. The chat service
 // still checks live provider work and view leases under its controller gate.
 func (s SessionRecord) EligibleForChatHibernation() bool {
+	return s.EligibleForChatRelease() && s.Kind != KindOrchestrator
+}
+
+// EligibleForChatRelease is the durable-fact filter for stopping an idle Chat
+// provider that is resumed straight away, such as an orchestrator whose
+// standing instructions changed (#4). Unlike hibernation it admits
+// orchestrators: the provider does not stay down.
+func (s SessionRecord) EligibleForChatRelease() bool {
 	return NormalizeSessionMode(s.Mode) == SessionModeChat &&
-		s.Kind != KindOrchestrator &&
 		!s.IsTerminated && !s.IsTaskPreparation && s.ProvisionState.WithDefault() == SessionProvisionReady &&
 		s.HibernatedAt == nil && s.Activity.State == ActivityIdle &&
 		!s.Activity.LastActivityAt.IsZero() &&

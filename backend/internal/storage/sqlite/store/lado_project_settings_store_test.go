@@ -56,6 +56,38 @@ func TestSetLadoModeStoresTheLatestChoice(t *testing.T) {
 	}
 }
 
+// Turning LADO mode on is audited (#4): the mode and its event are stored
+// together, the change at the event's time.
+func TestSetLadoModeAuditedStoresTheEvent(t *testing.T) {
+	s, raw := openLadoAuditStore(t)
+	ctx := context.Background()
+	at := time.Date(2026, 11, 27, 5, 34, 11, 0, time.UTC)
+	event := domain.LadoAuditEvent{
+		At: at, Actor: "api", Action: "project.lado_mode_on",
+		SubjectKind: "project", SubjectID: "mer",
+		Payload: []byte(`{"from":false,"to":true}`),
+	}
+
+	stored, err := s.SetLadoModeAudited(ctx, "mer", true, event)
+	if err != nil {
+		t.Fatalf("SetLadoModeAudited: %v", err)
+	}
+	if !stored.LadoMode || !stored.UpdatedAt.Equal(at) {
+		t.Fatalf("stored = %+v, want LADO mode on at %s", stored, at)
+	}
+	var actor, subject string
+	var n int
+	if err := raw.QueryRow(`SELECT COUNT(*), MAX(actor), MAX(subject_id) FROM lado_audit_events WHERE action = 'project.lado_mode_on'`).Scan(&n, &actor, &subject); err != nil {
+		t.Fatalf("read the audit event: %v", err)
+	}
+	if n != 1 || actor != "api" || subject != "mer" {
+		t.Fatalf("audit events = %d by %q on %q, want one by api on mer", n, actor, subject)
+	}
+	if got, err := s.LadoProjectSettings(ctx, "mer"); err != nil || !got.LadoMode {
+		t.Fatalf("settings = %+v (%v), want LADO mode on", got, err)
+	}
+}
+
 // #101: a new project does not wait on overlap. Every path that creates a
 // settings row stores overlap_wait 0, and a row that has it on keeps it.
 func TestLadoOverlapWaitDefaultsOffForNewProjects(t *testing.T) {

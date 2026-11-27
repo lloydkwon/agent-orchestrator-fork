@@ -149,14 +149,62 @@ func (s *Service) liveViewLeasesLocked(id domain.SessionID) map[string]time.Time
 	return views
 }
 
+// quiescentStop says when stopQuiescentChat may stop a provider and how the
+// stop is logged.
+type quiescentStop struct {
+	// eligible is the durable-fact check, read before and after the provider
+	// work checks.
+	eligible func(domain.SessionRecord) bool
+	// respectViews keeps a provider someone is looking at running.
+	respectViews bool
+	// enabled is read again just before the provider stops.
+	enabled func() bool
+	// stopped is the log message for a stopped provider.
+	stopped string
+}
+
 // HibernateChat stops a quiescent provider without ending its AO session. A
 // false result means the final locked eligibility check found useful work.
 func (s *Service) HibernateChat(ctx context.Context, id domain.SessionID) (bool, error) {
 	// Skip eligibility and queue reads while the feature is off. Recheck before
 	// stopping the provider in case the setting changes during those reads.
-	if s.hibernationEnabled == nil || !s.hibernationEnabled() {
+	if !s.hibernationOn() {
 		return false, nil
 	}
+	return s.stopQuiescentChat(ctx, id, quiescentStop{
+		eligible: func(rec domain.SessionRecord) bool {
+			return rec.EligibleForChatHibernation() && !rec.Activity.LastActivityAt.Add(chatHibernateGrace).After(s.now())
+		},
+		respectViews: true,
+		enabled:      s.hibernationOn,
+		stopped:      "chat session hibernated",
+	})
+}
+
+// ReleaseIdleChat stops a quiescent provider, orchestrators included, the way
+// HibernateChat does, so that the next launch resumes the same native
+// conversation with standing instructions built afresh (#4). It ignores the
+// hibernation setting and open views, and needs quiet since the last activity.
+// The session is left hibernated: the caller resumes it, and a send or a newly
+// opened view that comes first wakes it. A false result means the provider is
+// busy or not running.
+func (s *Service) ReleaseIdleChat(ctx context.Context, id domain.SessionID, quiet time.Duration) (bool, error) {
+	return s.stopQuiescentChat(ctx, id, quiescentStop{
+		eligible: func(rec domain.SessionRecord) bool {
+			return rec.EligibleForChatRelease() && !rec.Activity.LastActivityAt.Add(quiet).After(s.now())
+		},
+		enabled: func() bool { return true },
+		stopped: "chat session released to refresh its instructions",
+	})
+}
+
+func (s *Service) hibernationOn() bool {
+	return s.hibernationEnabled != nil && s.hibernationEnabled()
+}
+
+// stopQuiescentChat stops a provider with no work in flight and marks the
+// session hibernated, keeping its AO session and native conversation.
+func (s *Service) stopQuiescentChat(ctx context.Context, id domain.SessionID, policy quiescentStop) (bool, error) {
 	marker, ok := s.sessions.(hibernationStore)
 	if !ok {
 		return false, errors.New("chat hibernation store is unavailable")
@@ -175,8 +223,7 @@ func (s *Service) HibernateChat(ctx context.Context, id domain.SessionID) (bool,
 		gate.unlock()
 		return false, err
 	}
-	if !rec.EligibleForChatHibernation() || s.hasChatView(id) ||
-		rec.Activity.LastActivityAt.Add(chatHibernateGrace).After(s.now()) {
+	if !policy.eligible(rec) || policy.respectViews && s.hasChatView(id) {
 		gate.unlock()
 		return false, nil
 	}
@@ -208,7 +255,7 @@ func (s *Service) HibernateChat(ctx context.Context, id domain.SessionID) (bool,
 	}
 	defer gate.unlock()
 	current, err := s.Controller(id)
-	if err != nil || current != controller || s.hasChatView(id) {
+	if err != nil || current != controller || policy.respectViews && s.hasChatView(id) {
 		return false, nil
 	}
 	// Send and provider lifecycle projection use the same dispatch lock. Fence
@@ -263,11 +310,7 @@ func (s *Service) HibernateChat(ctx context.Context, id domain.SessionID) (bool,
 		controller.sendMu.Unlock()
 		return false, err
 	}
-	if !fresh.EligibleForChatHibernation() || fresh.Activity.LastActivityAt.Add(chatHibernateGrace).After(s.now()) {
-		controller.sendMu.Unlock()
-		return false, nil
-	}
-	if s.hibernationEnabled == nil || !s.hibernationEnabled() {
+	if !policy.eligible(fresh) || !policy.enabled() {
 		controller.sendMu.Unlock()
 		return false, nil
 	}
@@ -313,7 +356,7 @@ func (s *Service) HibernateChat(ctx context.Context, id domain.SessionID) (bool,
 			return false, fmt.Errorf("wait for hibernated chat controller: %w", recoveryCtx.Err())
 		}
 	}
-	s.log.Info("chat session hibernated", "session", id, "harness", fresh.Harness)
+	s.log.Info(policy.stopped, "session", id, "harness", fresh.Harness)
 	return true, nil
 }
 
