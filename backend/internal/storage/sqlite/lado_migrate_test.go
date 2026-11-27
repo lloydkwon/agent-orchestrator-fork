@@ -96,13 +96,15 @@ func appliedVersion(t *testing.T, db *sql.DB, versionTable string) int64 {
 }
 
 // latestLadoMigration reads the highest NNNN prefix in migrations_lado/.
-func latestLadoMigration(t *testing.T) int64 {
+// ladoMigrationVersions lists the version of every LADO migration file. The
+// numbers may have gaps: a migration takes a number no other branch uses.
+func ladoMigrationVersions(t *testing.T) []int64 {
 	t.Helper()
 	entries, err := os.ReadDir("migrations_lado")
 	if err != nil {
 		t.Fatalf("read LADO migrations: %v", err)
 	}
-	var latest int64
+	var versions []int64
 	for _, entry := range entries {
 		prefix, _, ok := strings.Cut(entry.Name(), "_")
 		if !ok || !strings.HasSuffix(entry.Name(), ".sql") {
@@ -112,12 +114,17 @@ func latestLadoMigration(t *testing.T) int64 {
 		if err != nil {
 			t.Fatalf("LADO migration %s has no numeric prefix", entry.Name())
 		}
-		latest = max(latest, version)
+		versions = append(versions, version)
 	}
-	if latest == 0 {
+	if len(versions) == 0 {
 		t.Fatal("no LADO migrations found")
 	}
-	return latest
+	return versions
+}
+
+func latestLadoMigration(t *testing.T) int64 {
+	t.Helper()
+	return slices.Max(ladoMigrationVersions(t))
 }
 
 func triggerExists(t *testing.T, db *sql.DB, name string) bool {
@@ -218,7 +225,7 @@ func TestReopenLeavesLadoTrackUnchanged(t *testing.T) {
 		t.Fatalf("count LADO versions: %v", err)
 	}
 	// goose records version 0 when it creates the table, then one row per migration.
-	if want := latestLadoMigration(t) + 1; rows != want {
+	if want := int64(len(ladoMigrationVersions(t))) + 1; rows != want {
 		t.Fatalf("lado_goose_db_version has %d rows after two opens, want %d", rows, want)
 	}
 }

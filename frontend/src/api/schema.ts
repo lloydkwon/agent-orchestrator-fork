@@ -3106,7 +3106,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List persisted project reports without changing delivery state */
+        /** List persisted reports of one project or one session without changing delivery state */
         get: operations["listReports"];
         put?: never;
         /** Persist a worker report for later orchestrator delivery */
@@ -23517,9 +23517,11 @@ export interface operations {
     };
     listReports: {
         parameters: {
-            query: {
-                /** @description Stable project identifier. */
-                projectId: string;
+            query?: {
+                /** @description Stable project identifier. Give this or sessionId, not both. */
+                projectId?: string;
+                /** @description Session identifier, also for a session without a project. Give this or projectId, not both. */
+                sessionId?: string;
             };
             header?: never;
             path?: never;

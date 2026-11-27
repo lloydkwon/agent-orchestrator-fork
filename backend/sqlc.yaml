@@ -106,6 +106,13 @@ sql:
               import: "github.com/aoagents/agent-orchestrator/backend/internal/domain"
               type: "ProjectID"
               pointer: true
+          # LADO fork: migrations_lado/0027 makes reports.project_id nullable
+          # through sqlite_schema, which sqlc cannot see (GitHub issue #8).
+          - column: "reports.project_id"
+            go_type:
+              import: "github.com/aoagents/agent-orchestrator/backend/internal/domain"
+              type: "ProjectID"
+              pointer: true
           - column: "sessions.issue_id"
             go_type:
               import: "github.com/aoagents/agent-orchestrator/backend/internal/domain"

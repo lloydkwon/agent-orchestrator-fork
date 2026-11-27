@@ -82,12 +82,40 @@ func (s *Service) ListProject(ctx context.Context, projectID domain.ProjectID) (
 	if err != nil {
 		return nil, err
 	}
+	sortReportsByCreation(reports)
+	return reports, nil
+}
+
+func sortReportsByCreation(reports []domain.ReportRecord) {
 	sort.SliceStable(reports, func(i, j int) bool {
 		if reports[i].CreatedAt.Equal(reports[j].CreatedAt) {
 			return reports[i].ID < reports[j].ID
 		}
 		return reports[i].CreatedAt.Before(reports[j].CreatedAt)
 	})
+}
+
+// ListSession returns one session's persisted reports ordered by created_at
+// then id. It serves sessions without a project too, whose reports no project
+// list holds. Like ListProject it never changes delivery state.
+func (s *Service) ListSession(ctx context.Context, sessionID domain.SessionID) ([]domain.ReportRecord, error) {
+	if s == nil || s.store == nil {
+		return nil, errors.New("report: store is required")
+	}
+	if sessionID == "" {
+		return nil, apierr.Invalid("REPORT_SESSION_REQUIRED", "Session id is required", nil)
+	}
+	reader, ok := s.store.(interface {
+		ListReportsBySession(context.Context, domain.SessionID) ([]domain.ReportRecord, error)
+	})
+	if !ok {
+		return nil, errors.New("report: session reader is required")
+	}
+	reports, err := reader.ListReportsBySession(ctx, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	sortReportsByCreation(reports)
 	return reports, nil
 }
 
@@ -101,7 +129,7 @@ func (s *Service) Create(ctx context.Context, input CreateInput) (domain.ReportR
 		return domain.ReportRecord{}, apierr.Invalid("INVALID_REPORT_SESSION", "Worker session id is required", nil)
 	}
 	if err := domain.ValidateReportContent(input.State, input.Note, input.Message, input.Outputs); err != nil {
-		return domain.ReportRecord{}, apierr.Invalid("INVALID_REPORT", "Report state, note, message, or outputs are invalid", nil)
+		return domain.ReportRecord{}, invalidReportError(err)
 	}
 	session, ok, err := s.store.GetSession(ctx, input.SessionID)
 	if err != nil {
@@ -133,6 +161,11 @@ func (s *Service) Create(ctx context.Context, input CreateInput) (domain.ReportR
 		SettlementDeadline: settlementDeadline, RepeatCount: 1,
 	}
 	created, err := s.store.CreateReport(ctx, rec)
+	if errors.Is(err, domain.ErrInvalidReport) {
+		// The store re-checks the whole record. A rejection there is still a
+		// report the worker cannot store, never an internal failure.
+		return domain.ReportRecord{}, invalidReportError(err)
+	}
 	if err != nil {
 		return created, err
 	}
@@ -150,4 +183,15 @@ func (s *Service) Create(ctx context.Context, input CreateInput) (domain.ReportR
 		}
 	}
 	return created, nil
+}
+
+// invalidReportError turns a domain.ErrInvalidReport into a 400 that names
+// the broken rule, so the worker can correct its ao report call.
+func invalidReportError(err error) error {
+	message := "Report state, note, message, or outputs are invalid"
+	var invalid *domain.ReportInvalidError
+	if errors.As(err, &invalid) {
+		message += ": " + invalid.Reason
+	}
+	return apierr.Invalid("INVALID_REPORT", message, nil)
 }

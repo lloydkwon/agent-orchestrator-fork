@@ -9,6 +9,8 @@ import (
 	"context"
 	"database/sql"
 	"time"
+
+	"github.com/aoagents/agent-orchestrator/backend/internal/domain"
 )
 
 const acknowledgeReport = `-- name: AcknowledgeReport :one
@@ -59,7 +61,7 @@ RETURNING id, session_id, project_id, state, note, message, created_at, delivery
 
 type AcknowledgeReportBatchParams struct {
 	AcknowledgedAt sql.NullTime
-	ProjectID      string
+	ProjectID      *domain.ProjectID
 	ClaimToken     string
 }
 
@@ -113,7 +115,7 @@ WHERE project_id = ?2 AND delivery_state = 'pending'
 
 type AssignPendingReportsToBatchParams struct {
 	DeliveryBatchID string
-	ProjectID       string
+	ProjectID       *domain.ProjectID
 }
 
 func (q *Queries) AssignPendingReportsToBatch(ctx context.Context, arg AssignPendingReportsToBatchParams) error {
@@ -134,7 +136,7 @@ RETURNING id, session_id, project_id, state, note, message, created_at, delivery
 type ClaimPendingReportsByBatchParams struct {
 	ClaimToken      string
 	ClaimedAt       sql.NullTime
-	ProjectID       string
+	ProjectID       *domain.ProjectID
 	DeliveryBatchID string
 }
 
@@ -236,7 +238,7 @@ RETURNING id, session_id, project_id, state, note, message, created_at, delivery
 type CreateReportParams struct {
 	ID                 string
 	SessionID          string
-	ProjectID          string
+	ProjectID          *domain.ProjectID
 	State              string
 	Note               string
 	Message            string
@@ -318,7 +320,7 @@ RETURNING id, session_id, project_id, state, note, message, created_at, delivery
 type DeferReportBatchParams struct {
 	AvailableAt interface{}
 	LastError   string
-	ProjectID   string
+	ProjectID   *domain.ProjectID
 	ClaimToken  string
 }
 
@@ -410,11 +412,13 @@ func (q *Queries) GetReportInterrupt(ctx context.Context, sessionID string) (tim
 
 const listPendingReportSchedule = `-- name: ListPendingReportSchedule :many
 SELECT id, session_id, project_id, state, note, message, created_at, delivery_state, available_at, settlement_deadline, repeat_count, claim_token, claimed_at, delivery_attempts, acknowledged_at, last_error, delivery_batch_id FROM reports
-WHERE delivery_state = 'pending'
+WHERE delivery_state = 'pending' AND project_id IS NOT NULL
 ORDER BY available_at, created_at, id
 LIMIT ?
 `
 
+// LADO fork: a report of a session without a project has no orchestrator
+// to deliver to, so it never enters the delivery schedule (GitHub issue #8).
 func (q *Queries) ListPendingReportSchedule(ctx context.Context, limit int64) ([]Report, error) {
 	rows, err := q.db.QueryContext(ctx, listPendingReportSchedule, limit)
 	if err != nil {
@@ -458,7 +462,7 @@ func (q *Queries) ListPendingReportSchedule(ctx context.Context, limit int64) ([
 
 const listPendingReports = `-- name: ListPendingReports :many
 SELECT id, session_id, project_id, state, note, message, created_at, delivery_state, available_at, settlement_deadline, repeat_count, claim_token, claimed_at, delivery_attempts, acknowledged_at, last_error, delivery_batch_id FROM reports
-WHERE delivery_state = 'pending' AND available_at <= ?
+WHERE delivery_state = 'pending' AND project_id IS NOT NULL AND available_at <= ?
 ORDER BY created_at, id
 LIMIT ?
 `
@@ -517,7 +521,7 @@ LIMIT ?
 `
 
 type ListPendingReportsByProjectScheduleParams struct {
-	ProjectID string
+	ProjectID *domain.ProjectID
 	Limit     int64
 }
 
@@ -629,7 +633,7 @@ const listReportsByProject = `-- name: ListReportsByProject :many
 SELECT id, session_id, project_id, state, note, message, created_at, delivery_state, available_at, settlement_deadline, repeat_count, claim_token, claimed_at, delivery_attempts, acknowledged_at, last_error, delivery_batch_id FROM reports WHERE project_id = ? ORDER BY created_at, id
 `
 
-func (q *Queries) ListReportsByProject(ctx context.Context, projectID string) ([]Report, error) {
+func (q *Queries) ListReportsByProject(ctx context.Context, projectID *domain.ProjectID) ([]Report, error) {
 	rows, err := q.db.QueryContext(ctx, listReportsByProject, projectID)
 	if err != nil {
 		return nil, err
@@ -788,7 +792,7 @@ RETURNING id, session_id, project_id, state, note, message, created_at, delivery
 type ReleaseReportBatchParams struct {
 	AvailableAt interface{}
 	LastError   string
-	ProjectID   string
+	ProjectID   *domain.ProjectID
 	ClaimToken  string
 }
 
