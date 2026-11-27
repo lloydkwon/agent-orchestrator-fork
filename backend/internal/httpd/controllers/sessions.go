@@ -2825,7 +2825,12 @@ func sessionView(r *http.Request, s domain.Session) SessionView {
 const maxUserMessagePreviewLen = 160
 
 // userMessagePreview 는 프롬프트를 한 줄로 접고 룬 경계에서 자른다.
+// provider 가 넣은 알림은 비운다. lifecycle 이 이제 그런 글을 저장하지 않지만, 고치기
+// 전에 저장된 행이 남아 있다(이슈 #9). 비우면 사이드바는 전에 보이던 줄을 그대로 둔다.
 func userMessagePreview(prompt string) string {
+	if domain.IsProviderInjectedPrompt(prompt) {
+		return ""
+	}
 	line := strings.Join(strings.Fields(prompt), " ")
 	if utf8.RuneCountInString(line) <= maxUserMessagePreviewLen {
 		return line
