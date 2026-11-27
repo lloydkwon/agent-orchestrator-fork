@@ -868,7 +868,10 @@ retryProjection:
 			// 이슈 #9: Claude Code 가 스스로 넣은 알림(<task-notification>)·세션 사이
 			// 전달글도 이 훅으로 들어온다. 턴 경계·활동·네이티브 증거는 사람 프롬프트와
 			// 똑같이 다루되, "사람이 마지막으로 시킨 일"인 글과 그 시각은 그대로 둔다.
-			if !domain.IsProviderInjectedPrompt(s.LatestUserPrompt) {
+			// 앞머리는 모두 Claude Code 의 것이다. 다른 하니스에서는 거르지 않아, Stop 답과
+			// 짝짓는 경로(Codex 의 complete 체크포인트)가 이전 사람 글을 빌려 쓰지 않는다.
+			providerNotice := rec.Harness == domain.HarnessClaudeCode && domain.IsProviderInjectedPrompt(s.LatestUserPrompt)
+			if !providerNotice {
 				checkpoint.LatestUserPrompt = s.LatestUserPrompt
 				if promptAt.After(checkpoint.LatestUserPromptAt) {
 					// Owner changes can carry skewed clocks. Preserve the last-human

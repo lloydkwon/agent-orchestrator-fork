@@ -73,3 +73,32 @@ func TestActivity_ProviderInjectedPromptKeepsLatestHumanPrompt(t *testing.T) {
 		})
 	}
 }
+
+// 앞머리는 Claude Code 의 것이라 다른 하니스에서는 거르지 않는다. 걸렀다면 Codex 의
+// Stop 이 알림 턴의 답을 이전 사람 글과 짝지어 complete 체크포인트로 만든다.
+func TestActivity_ProviderNoticePrefixIsClaudeOnly(t *testing.T) {
+	m, store, _ := newManager()
+	rec := working("mer-1")
+	rec.Harness = domain.HarnessCodex
+	rec.Mode = domain.SessionModeTUI
+	rec.Metadata.RuntimeLaunchID = "launch-1"
+	rec.Metadata.AgentSessionID = "native-1"
+	rec.Metadata.AgentSessionIDLaunchID = "launch-1"
+	store.sessions[rec.ID] = rec
+
+	promptAt := time.Unix(1_000, 0).UTC()
+	for _, signal := range []ports.ActivitySignal{
+		{State: domain.ActivityActive, Event: "user-prompt-submit", ProviderTurnID: "t1", LatestUserPrompt: "결제 화면을 고쳐 줘", Timestamp: promptAt},
+		{State: domain.ActivityIdle, Event: "stop", ProviderTurnID: "t1", LatestAssistantUpdate: "고쳤습니다", Timestamp: promptAt.Add(time.Second)},
+		{State: domain.ActivityActive, Event: "user-prompt-submit", ProviderTurnID: "t2", LatestUserPrompt: "<task-notification>로 시작하는 글", Timestamp: promptAt.Add(time.Minute)},
+	} {
+		signal.Valid, signal.LaunchID, signal.AgentSessionID = true, "launch-1", "native-1"
+		if err := m.ApplyActivitySignal(ctx, rec.ID, signal); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got := store.sessions[rec.ID].Metadata
+	if got.LatestUserPrompt != "<task-notification>로 시작하는 글" || !got.LatestUserPromptAt.Equal(promptAt.Add(time.Minute)) {
+		t.Fatalf("Codex 프롬프트를 걸렀다: %q at %s", got.LatestUserPrompt, got.LatestUserPromptAt)
+	}
+}
