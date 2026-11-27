@@ -897,11 +897,21 @@ func (s *Service) Start(ctx context.Context, cfg StartConfig) (*Controller, erro
 		// Its replayed events will be adopted separately; leave bound live work
 		// and queued intake intact while closing the unbound visible spinner.
 		for _, turn := range liveRows.Turns {
-			if turn.State != domain.TurnStateRunning || turn.ProviderTurnID != "" || turn.RolledBackAt != nil {
+			if turn.State != domain.TurnStateRunning || turn.RolledBackAt != nil {
 				continue
 			}
-			if err := s.store.SettleUnboundRunningTurn(ctx, conversation.ID, cfg.SessionID, turn.ID, s.now()); err != nil {
-				s.log.Error("chat start: settle unbound running turn", "session", cfg.SessionID, "turn", turn.ID, "error", err)
+			switch {
+			case turn.ProviderTurnID == "":
+				if err := s.store.SettleUnboundRunningTurn(ctx, conversation.ID, cfg.SessionID, turn.ID, s.now()); err != nil {
+					s.log.Error("chat start: settle unbound running turn", "session", cfg.SessionID, "turn", turn.ID, "error", err)
+				}
+			case ports.IsProviderInitiatedTurn(turn.ProviderTurnID):
+				// 자율 턴은 AO 가 떨어져 있던 동안 끝났을 수 있고, 그 TurnCompleted 는 다시 오지 않는다.
+				// running 으로 두면 spinner 가 남으니 recovered 로 닫는다. provider 가 아직 그 턴을 돌고
+				// 있으면 이후 출력은 드라이버가 새 자율 턴으로 연다.
+				if err := s.store.SettleTurn(ctx, conversation.ID, turn.ProviderTurnID, domain.TurnStateRecovered, "", s.now()); err != nil {
+					s.log.Error("chat start: settle provider-initiated running turn", "session", cfg.SessionID, "turn", turn.ID, "error", err)
+				}
 			}
 		}
 	}
