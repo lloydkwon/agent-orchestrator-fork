@@ -28,6 +28,8 @@ import {
 	type WorkspaceSummary,
 } from "../types/workspace";
 import { agentReadinessQueryKey } from "../hooks/useAgentReadinessQuery";
+import { sessionDetailKey } from "../lib/session-detail";
+import { useSessionDetailStore } from "../stores/session-detail-store";
 import { agentReadiness } from "../test/agent-readiness-fixtures";
 import { sessionInterfaceTransitionStatus } from "../test/interface-transition-fixtures";
 import { useUiStore } from "../stores/ui-store";
@@ -3871,5 +3873,145 @@ describe("Sidebar active-session reveal", () => {
 		});
 		expect(screen.getByLabelText("Toggle Project One sessions")).toHaveAttribute("aria-expanded", "false");
 		expect(screen.queryByLabelText("Open fix login")).not.toBeInTheDocument();
+	});
+});
+
+describe("Sidebar scratchpad session detail", () => {
+	const scratchpad = (sessions: WorkspaceSession[]): WorkspaceSummary => ({
+		id: STANDALONE_WORKSPACE_ID,
+		name: "Scratchpad",
+		kind: STANDALONE_PROJECT_KIND,
+		path: "",
+		sessions,
+	});
+	const adHoc = (overrides: Partial<WorkspaceSession>): WorkspaceSession => ({
+		...session,
+		id: "adhoc-1",
+		title: "claude-code",
+		workspaceId: STANDALONE_WORKSPACE_ID,
+		workspaceName: "Scratchpad",
+		...overrides,
+	});
+
+	beforeEach(() => {
+		useSessionDetailStore.setState({ details: {} });
+	});
+
+	it("tells apart agents that share the default title by their latest prompt", () => {
+		renderSidebar({
+			workspaces: [
+				workspace,
+				scratchpad([
+					adHoc({ id: "adhoc-1", lastUserMessageAt: "2026-06-29T23:55:00Z", lastUserMessagePreview: "결제 화면의 환불 버튼 고치기" }),
+					adHoc({ id: "adhoc-2", lastUserMessageAt: "2026-06-29T23:50:00Z", lastUserMessagePreview: "사이드바 세션 구분 방법 추천" }),
+				]),
+			],
+		});
+
+		const rows = [...document.querySelectorAll<HTMLElement>("[data-scratchpad-section] [data-session-row]")];
+		expect(rows).toHaveLength(2);
+		const details = rows.map((row) => row.querySelector("[data-session-detail]")?.textContent).sort();
+		expect(details).toEqual(["결제 화면의 환불 버튼 고치기", "사이드바 세션 구분 방법 추천"]);
+		for (const row of rows) {
+			const detail = row.querySelector<HTMLElement>("[data-session-detail]")!;
+			const open = within(row).getByRole("button", { name: "Open claude-code" });
+			// Two-line rows grow; the actions and the age stay on the title line.
+			expect(row).toHaveClass("h-11", "[&>[data-session-actions]]:h-7", "[&>[data-session-actions]]:bottom-auto");
+			expect(row).not.toHaveClass("h-8");
+			expect(open).toHaveClass("h-11", "flex-col");
+			expect(detail).toHaveClass("truncate", "text-xs", "text-muted-foreground");
+			expect(detail).not.toHaveClass("text-passive");
+			// Only the title line makes room for the age and the hover actions; the second line runs to the row's end.
+			expect(open).toHaveClass("pr-0");
+			expect(open).not.toHaveClass("pr-[36px]");
+			expect(detail.previousElementSibling).toHaveClass(
+				"pr-[36px]",
+				"group-hover/session-row:pr-sidebar-project-actions",
+			);
+			expect(detail.previousElementSibling).toContainElement(within(row).getByText("claude-code"));
+			// The explicit aria-label hides the row's text, so the line is its description.
+			expect(open.getAttribute("aria-describedby")?.split(" ")).toContain(detail.id);
+			expect(open).toContainElement(detail);
+		}
+	});
+
+	it("keeps a one-line row when an agent has no prompt yet", () => {
+		renderSidebar({ workspaces: [workspace, scratchpad([adHoc({})])] });
+
+		const row = document.querySelector<HTMLElement>("[data-scratchpad-section] [data-session-row]")!;
+		expect(row.querySelector("[data-session-detail]")).toBeNull();
+		expect(row).toHaveClass("h-8");
+		expect(row).not.toHaveClass("h-11");
+		expect(within(row).getByRole("button", { name: "Open claude-code" })).toHaveClass("h-8", "items-center");
+	});
+
+	it("does not add the line to project sessions", () => {
+		renderSidebar({
+			workspaces: [{ ...workspace, sessions: [{ ...session, lastUserMessagePreview: "결제 화면의 환불 버튼 고치기" }] }],
+		});
+
+		expect(screen.getByLabelText("Open fix login")).toBeInTheDocument();
+		expect(document.querySelector("[data-session-detail]")).toBeNull();
+	});
+
+	it("keeps the remembered line when the latest prompt is only a short reply", () => {
+		const agent = adHoc({ lastUserMessagePreview: "응 진행해" });
+		useSessionDetailStore.setState({ details: { [sessionDetailKey(agent)]: "결제 화면의 환불 버튼 고치기" } });
+		renderSidebar({ workspaces: [workspace, scratchpad([agent])] });
+
+		expect(document.querySelector("[data-session-detail]")).toHaveTextContent("결제 화면의 환불 버튼 고치기");
+	});
+
+	it("remembers the line it shows for the next launch", async () => {
+		const agent = adHoc({ lastUserMessagePreview: "결제 화면의 환불 버튼 고치기" });
+		renderSidebar({ workspaces: [workspace, scratchpad([agent])] });
+
+		await waitFor(() =>
+			expect(useSessionDetailStore.getState().details[sessionDetailKey(agent)]).toBe("결제 화면의 환불 버튼 고치기"),
+		);
+	});
+
+	it("keeps following agents whose rows are not drawn", async () => {
+		// The list is capped behind Show more. A long prompt followed by a short reply
+		// on a hidden agent must not leave an older task remembered for it.
+		const agents = Array.from({ length: 12 }, (_, index) =>
+			adHoc({ id: `adhoc-${index}`, lastUserMessagePreview: `열두 개 가운데 ${index}번 세션이 하는 일` }),
+		);
+		renderSidebar({ workspaces: [workspace, scratchpad(agents)] });
+
+		expect(document.querySelectorAll("[data-scratchpad-section] [data-session-row]").length).toBeLessThan(agents.length);
+		await waitFor(() => {
+			const { details } = useSessionDetailStore.getState();
+			for (const [index, agent] of agents.entries()) {
+				expect(details[sessionDetailKey(agent)]).toBe(`열두 개 가운데 ${index}번 세션이 하는 일`);
+			}
+		});
+	});
+
+	it("hides a line that only restates a title taken from the first prompt", () => {
+		renderSidebar({
+			workspaces: [
+				workspace,
+				scratchpad([adHoc({ title: "fix the login redirect", lastUserMessagePreview: "fix the login redirect after expiry" })]),
+			],
+		});
+
+		expect(screen.getByLabelText("Open fix the login redirect")).toBeInTheDocument();
+		expect(document.querySelector("[data-session-detail]")).toBeNull();
+	});
+
+	it("keeps the line and the row height while renaming", async () => {
+		const user = userEvent.setup();
+		renderSidebar({
+			workspaces: [workspace, scratchpad([adHoc({ lastUserMessagePreview: "결제 화면의 환불 버튼 고치기" })])],
+		});
+
+		screen.getByLabelText("Open claude-code").focus();
+		await user.keyboard("{F2}");
+
+		const editor = screen.getByLabelText("Rename claude-code");
+		const row = editor.closest<HTMLElement>("[data-session-row]")!;
+		expect(row).toHaveClass("h-11");
+		expect(row.querySelector("[data-session-detail]")).toHaveTextContent("결제 화면의 환불 버튼 고치기");
 	});
 });

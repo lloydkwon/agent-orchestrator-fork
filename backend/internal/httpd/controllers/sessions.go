@@ -2821,6 +2821,7 @@ func sessionView(r *http.Request, s domain.Session) SessionView {
 			at := s.Metadata.LatestUserPromptAt
 			return &at
 		}(),
+		LastUserMessagePreview: userMessagePreview(s.Metadata.LatestUserPrompt),
 		LastInteractionAt: func() *time.Time {
 			at := s.Metadata.LatestUserPromptAt
 			if s.Metadata.LatestInteractionAt.After(at) {
@@ -2840,6 +2841,20 @@ func sessionView(r *http.Request, s domain.Session) SessionView {
 		view.ActiveAgentSwitch = &active
 	}
 	return view
+}
+
+// LADO fork: maxUserMessagePreviewLen 은 세션 응답에 싣는 한 줄 프롬프트 미리보기의 길이 한도다.
+// 사이드바 행에는 이보다 훨씬 적게 보인다. 한도는 16 KiB 프롬프트가 세션 목록 응답마다
+// 실리지 않게 막는 용도다.
+const maxUserMessagePreviewLen = 160
+
+// userMessagePreview 는 프롬프트를 한 줄로 접고 룬 경계에서 자른다.
+func userMessagePreview(prompt string) string {
+	line := strings.Join(strings.Fields(prompt), " ")
+	if utf8.RuneCountInString(line) <= maxUserMessagePreviewLen {
+		return line
+	}
+	return string([]rune(line)[:maxUserMessagePreviewLen])
 }
 
 func agentSwitchView(s domain.AgentSwitch) AgentSwitchView {

@@ -19676,6 +19676,9 @@ components:
           type:
           - "null"
           - string
+        lastUserMessagePreview:
+          maxLength: 160
+          type: string
         mode:
           enum:
           - chat
