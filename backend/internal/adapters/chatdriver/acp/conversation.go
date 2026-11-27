@@ -77,6 +77,10 @@ type toolState struct {
 	rawOutput      any
 	meta           map[string]any
 	terminalOutput string
+	// announced 는 이 턴에서 tool_call 로 알린 도구인지다. mergeToolUpdate 가
+	// 모르는 id 의 tool_call_update 로 만든 항목은 false 다. 자율 턴의 닫힘은
+	// 알린 도구만 막는다.
+	announced bool
 }
 
 type nestedMessageState struct {
@@ -148,6 +152,9 @@ type conversation struct {
 	providerInitiatedQuiet time.Duration
 	// autoTurn 은 열린 자율 턴이다. c.mu 가 지킨다.
 	autoTurn *providerInitiatedTurn
+	// interruptedTurn 은 Interrupt 가 떼어 냈지만 아직 interrupted TurnCompleted 를
+	// 내지 않은 자율 턴이다. c.mu 가 지킨다. emitInterruptedProviderTurn 참고.
+	interruptedTurn *closingTurn
 	// turnEmitMu 는 자율 턴의 경계(열기, 닫기)와 다른 턴의 TurnStarted 가 겹치지
 	// 않게 줄 세운다. 잠금 순서는 turnEmitMu → c.mu 다. provider_initiated.go 참고.
 	turnEmitMu sync.Mutex
@@ -704,6 +711,7 @@ func (c *conversation) runTurn(ctx context.Context, sessionID string, turn prepa
 	// 떼어 낸 자율 턴의 TurnCompleted 가 이 턴의 TurnStarted 보다 먼저 나가야
 	// 두 턴이 겹쳐 열리지 않는다.
 	unlockBoundary := c.lockTurnBoundary()
+	c.emitInterruptedProviderTurn()
 	c.emitClosingTurn(turn.closing, domain.TurnStateCompleted)
 	c.emit(ports.ChatEvent{Kind: ports.ChatEventTurnStarted, ProviderTurnID: turn.id})
 	unlockBoundary()
@@ -889,6 +897,7 @@ func (c *conversation) Compact(ctx context.Context) (ports.ChatCompactionResult,
 	c.resetTurnItemsLocked()
 	c.mu.Unlock()
 
+	c.emitInterruptedProviderTurn()
 	c.emitClosingTurn(closing, domain.TurnStateCompleted)
 	c.emit(ports.ChatEvent{Kind: ports.ChatEventTurnStarted, ProviderTurnID: id})
 	unlockBoundary()
@@ -1298,7 +1307,7 @@ func (c *conversation) settleTurnItems(turnID string, items turnItems, turnState
 
 // toolStillOpen 은 도구가 아직 끝나지 않은 상태(pending, in_progress, 상태 없음)인지
 // 알려 준다. settleOpenItems 가 실패로 닫을 도구와, 자율 턴의 닫힘을 막는 도구를
-// 같은 기준으로 고른다.
+// 같은 기준으로 고른다. 자율 턴은 여기에 더해 tool_call 로 알린 도구만 본다.
 func toolStillOpen(status acpsdk.ToolCallStatus) bool {
 	return status == acpsdk.ToolCallStatusPending || status == acpsdk.ToolCallStatusInProgress || status == ""
 }

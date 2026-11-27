@@ -690,7 +690,7 @@ func (c *conversation) processUpdate(params acpsdk.SessionNotification) error {
 			kind: update.ToolCall.Kind, status: update.ToolCall.Status,
 			locations: update.ToolCall.Locations, content: update.ToolCall.Content,
 			rawInput: update.ToolCall.RawInput, rawOutput: update.ToolCall.RawOutput,
-			meta: cloneMeta(update.ToolCall.Meta),
+			meta: cloneMeta(update.ToolCall.Meta), announced: true,
 		}
 		c.mu.Lock()
 		c.tools[tool.id] = tool

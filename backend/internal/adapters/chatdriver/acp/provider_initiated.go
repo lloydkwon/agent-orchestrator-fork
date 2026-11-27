@@ -25,14 +25,24 @@ import (
 // 알려진 한계:
 //   - StartDeferredTurn 이 activeTurn 을 정한 뒤 runTurn 이 TurnStarted 를 내기
 //     전에 온 자율 갱신은 사용자 턴의 것으로 묶인다.
-//   - 끝나지 않은 도구가 오래 열려 있으면 자율 턴도 그동안 열려 있다.
+//   - tool_call 로 알린 도구가 끝나지 않으면, 갱신 없이 조용한 시간의
+//     providerInitiatedOpenToolWaitLimit 배(기본 10분)가 더 지날 때까지 자율 턴이
+//     열려 있다. 그 뒤에는 닫고 그 도구를 실패로 정리한다. 그 도구의 마지막
+//     갱신이 늦게 오면 턴 없는 갱신으로 나간다.
+
+// providerInitiatedOpenToolWaitLimit 는 알린 도구만 끝나지 않은 채 갱신이 없을
+// 때, 첫 조용한 시간 뒤에 몇 번 더 기다리는지다. 도구의 마지막 갱신이 오지
+// 않아도 자율 턴이 끝없이 열려 있지 않게 한다.
+const providerInitiatedOpenToolWaitLimit = 40
 
 // providerInitiatedTurn 은 열린 자율 턴이다. c.mu 가 지킨다. seq 는 갱신마다
-// 늘고, 타이머는 자기가 잡은 seq 가 그대로일 때만 턴을 닫는다.
+// 늘고, 타이머는 자기가 잡은 seq 가 그대로일 때만 턴을 닫는다. openToolWaits 는
+// 마지막 갱신 뒤 열린 도구 때문에 닫지 못하고 다시 기다린 횟수다.
 type providerInitiatedTurn struct {
-	id    string
-	seq   uint64
-	timer *time.Timer
+	id            string
+	seq           uint64
+	timer         *time.Timer
+	openToolWaits int
 }
 
 // turnItems 는 한 턴에서 아직 끝나지 않은 항목들이다. 턴을 닫을 때
@@ -104,8 +114,10 @@ func (c *conversation) takeProviderInitiatedTurnLocked() *closingTurn {
 }
 
 // stopProviderInitiatedTurnLocked 는 닫는 이벤트 없이 자율 턴 상태를 지운다.
-// Close, Hibernate, Terminate 가 쓴다. c.mu 를 쥐고 부른다.
+// Interrupt 가 떼어 두고 아직 내지 않은 턴도 버린다. Close, Hibernate,
+// Terminate 가 쓴다. c.mu 를 쥐고 부른다.
 func (c *conversation) stopProviderInitiatedTurnLocked() {
+	c.interruptedTurn = nil
 	if c.autoTurn == nil {
 		return
 	}
@@ -136,6 +148,20 @@ func (c *conversation) emitClosingTurn(closing *closingTurn, state domain.TurnSt
 	}
 	c.settleTurnItems(closing.id, closing.items, state)
 	c.emit(ports.ChatEvent{Kind: ports.ChatEventTurnCompleted, ProviderTurnID: closing.id, TurnState: state})
+}
+
+// emitInterruptedProviderTurn 은 Interrupt 가 떼어 둔 자율 턴의 interrupted
+// TurnCompleted 를 낸다. 떼어 둔 턴이 없으면 아무것도 하지 않는다. turnEmitMu 를
+// 쥐고 부른다. 새 턴의 TurnStarted 를 내는 길은 모두 이 함수를 먼저 불러, 앞
+// 턴의 닫힘이 새 턴의 시작보다 늦게 나가지 않게 한다. Interrupt 가 띄운
+// goroutine 과 이 길들 가운데 먼저 turnEmitMu 를 잡은 쪽이 내고, 나중 쪽은
+// 아무것도 하지 않는다.
+func (c *conversation) emitInterruptedProviderTurn() {
+	c.mu.Lock()
+	closing := c.interruptedTurn
+	c.interruptedTurn = nil
+	c.mu.Unlock()
+	c.emitClosingTurn(closing, domain.TurnStateInterrupted)
 }
 
 // armProviderInitiatedTimerLocked 는 자율 턴의 seq 를 잡은 타이머를 새로 건다.
@@ -176,6 +202,8 @@ func (c *conversation) bindProviderInitiatedTurn(resumed bool) (string, func()) 
 		c.mu.Unlock()
 		return turnID, noop
 	}
+	// Interrupt 가 떼어 둔 턴의 닫힘을 이 갱신이 열 새 자율 턴보다 먼저 낸다.
+	c.emitInterruptedProviderTurn()
 	c.mu.Lock()
 	if c.closed || c.activeTurn != "" {
 		turnID := c.activeTurn
@@ -185,6 +213,7 @@ func (c *conversation) bindProviderInitiatedTurn(resumed bool) (string, func()) 
 	}
 	if turn := c.autoTurn; turn != nil {
 		turn.seq++
+		turn.openToolWaits = 0
 		c.armProviderInitiatedTimerLocked(turn)
 		c.mu.Unlock()
 		return turn.id, c.turnEmitMu.Unlock
@@ -203,15 +232,20 @@ func (c *conversation) bindProviderInitiatedTurn(resumed bool) (string, func()) 
 	return turn.id, c.turnEmitMu.Unlock
 }
 
-// providerInitiatedTurnBlockedLocked 는 자율 턴을 아직 닫으면 안 되는지 알려
-// 준다. 끝나지 않은 도구, 대기 중인 승인이나 입력이 있으면 닫지 않는다.
-// c.mu 를 쥐고 부른다.
-func (c *conversation) providerInitiatedTurnBlockedLocked() bool {
-	if len(c.pending) > 0 || len(c.pendingInputs) > 0 {
-		return true
-	}
+// providerInitiatedRequestPendingLocked 는 대기 중인 승인이나 입력이 있는지
+// 알려 준다. 사람이 답할 일이므로 이것이 있는 동안은 기다리는 횟수와 관계없이
+// 자율 턴을 닫지 않는다. c.mu 를 쥐고 부른다.
+func (c *conversation) providerInitiatedRequestPendingLocked() bool {
+	return len(c.pending) > 0 || len(c.pendingInputs) > 0
+}
+
+// providerInitiatedToolOpenLocked 는 이 자율 턴에서 tool_call 로 알린 도구 가운데
+// 끝나지 않은 것이 있는지 알려 준다. 모르는 id 의 tool_call_update 로 생긴
+// 항목은 그 턴이 시작한 도구가 아니고 끝날 갱신이 온다는 보장도 없으므로 세지
+// 않는다. c.mu 를 쥐고 부른다.
+func (c *conversation) providerInitiatedToolOpenLocked() bool {
 	for _, tool := range c.tools {
-		if toolStillOpen(tool.status) {
+		if tool.announced && toolStillOpen(tool.status) {
 			return true
 		}
 	}
@@ -220,7 +254,9 @@ func (c *conversation) providerInitiatedTurnBlockedLocked() bool {
 
 // closeProviderInitiatedTurnAfterQuiet 은 타이머가 울렸을 때 자율 턴을 닫는다.
 // 그 사이 갱신이 와 seq 가 바뀌었거나 턴이 이미 떼어졌으면 아무것도 하지
-// 않는다. 닫을 수 없는 상태면 같은 seq 로 타이머를 다시 건다.
+// 않는다. 대기 중인 요청이 있으면 같은 seq 로 타이머를 다시 건다. 알린 도구가
+// 끝나지 않았으면 providerInitiatedOpenToolWaitLimit 번까지 다시 걸고, 그 뒤에는
+// 닫는다. 닫을 때 settleTurnItems 가 끝나지 않은 도구를 실패로 정리한다.
 func (c *conversation) closeProviderInitiatedTurnAfterQuiet(id string, seq uint64) {
 	c.turnEmitMu.Lock()
 	defer c.turnEmitMu.Unlock()
@@ -230,7 +266,13 @@ func (c *conversation) closeProviderInitiatedTurnAfterQuiet(id string, seq uint6
 		c.mu.Unlock()
 		return
 	}
-	if c.providerInitiatedTurnBlockedLocked() {
+	if c.providerInitiatedRequestPendingLocked() {
+		c.armProviderInitiatedTimerLocked(turn)
+		c.mu.Unlock()
+		return
+	}
+	if c.providerInitiatedToolOpenLocked() && turn.openToolWaits < providerInitiatedOpenToolWaitLimit {
+		turn.openToolWaits++
 		c.armProviderInitiatedTimerLocked(turn)
 		c.mu.Unlock()
 		return
@@ -244,7 +286,12 @@ func (c *conversation) closeProviderInitiatedTurnAfterQuiet(id string, seq uint6
 // provider 가 스스로 연 사이클은 AO 의 session/prompt 가 아니므로
 // session/cancel 은 보내지 않고, 기록만 interrupted 로 닫는다. 닫는 emit 은
 // 따로 띄운 goroutine 에서 한다. Interrupt 를 부른 controller 가 sendMu 를 쥔
-// 채 기다리지 않게 하기 위해서다. 처리했으면 true 다.
+// 채 기다리지 않게 하기 위해서다. 떼어 낸 턴은 interruptedTurn 에 맡겨, 그
+// goroutine 보다 먼저 turnEmitMu 를 잡은 새 턴이 자기 TurnStarted 앞에서 대신
+// 내게 한다(emitInterruptedProviderTurn). 처리했으면 true 다.
+//
+// 맡겨 둔 턴은 많아야 하나다. 새 자율 턴은 turnEmitMu 아래에서 맡겨 둔 턴을
+// 먼저 낸 뒤에만 열리고, Interrupt 는 열린 자율 턴이 있어야 맡긴다.
 //
 // 한계: 그 순간 처리 중이던 자율 갱신의 항목은 떼어 낸 map 에 들어가지 못해
 // 완료 이벤트 없이 남을 수 있다.
@@ -255,12 +302,12 @@ func (c *conversation) interruptProviderInitiatedTurn(providerTurnID string) boo
 		c.mu.Unlock()
 		return false
 	}
-	closing := c.takeProviderInitiatedTurnLocked()
+	c.interruptedTurn = c.takeProviderInitiatedTurnLocked()
 	c.mu.Unlock()
 	go func() {
 		c.turnEmitMu.Lock()
 		defer c.turnEmitMu.Unlock()
-		c.emitClosingTurn(closing, domain.TurnStateInterrupted)
+		c.emitInterruptedProviderTurn()
 	}()
 	return true
 }

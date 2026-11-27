@@ -80,6 +80,7 @@ func (c *refreshableConversation) loadHistory(ctx context.Context) (acpsdk.LoadS
 func (c *refreshableConversation) closeProviderInitiatedTurnBeforeReplay() {
 	unlockBoundary := c.lockTurnBoundary()
 	defer unlockBoundary()
+	c.emitInterruptedProviderTurn()
 	c.mu.Lock()
 	closing := c.takeProviderInitiatedTurnLocked()
 	c.mu.Unlock()

@@ -20,6 +20,7 @@ import (
 // 이 파일은 사용자 턴 없이 provider 가 스스로 연 사이클(Claude Code 의
 // <task-notification> 턴)을 드라이버가 자율 턴으로 묶는지 본다. 시험은
 // 공개 드라이버 API 와 fakeAgent 만 쓰고 자율 턴의 내부 상태는 읽지 않는다.
+// 예외로 Interrupt 순서 시험은 turnEmitMu 를 직접 잡아 경합을 재현한다.
 
 // recordedEvent 는 받은 이벤트와 받은 시각이다.
 type recordedEvent struct {
@@ -377,6 +378,61 @@ func TestProviderInitiatedTurnWaitsForOpenTools(t *testing.T) {
 	}
 }
 
+// tool_call 로 알리지 않은 id 의 상태 없는 tool_call_update 는 mergeToolUpdate 가
+// 상태 없는 항목을 만들지만, 자율 턴의 닫힘을 막지 않는다. 조용한 시간 뒤에
+// 닫히고, 열린 도구 대기 한도까지 기다리지 않는다.
+func TestProviderInitiatedTurnIgnoresUnannouncedToolUpdate(t *testing.T) {
+	h := startProviderInitiatedHarness(t, &fakeAgent{}, true, 100*time.Millisecond)
+	h.push(acpsdk.UpdateAgentMessageText("백그라운드 결과"))
+	_, started := h.waitFor("자율 TurnStarted", 0, isProviderInitiatedStart, 2*time.Second)
+	turnID := started.event.ProviderTurnID
+
+	from := h.mark()
+	lastPush := time.Now()
+	h.push(acpsdk.SessionUpdate{ToolCallUpdate: &acpsdk.SessionToolCallUpdate{
+		SessionUpdate: "tool_call_update", ToolCallId: "unannounced-tool",
+	}})
+	h.waitFor("알리지 않은 도구의 활동 이벤트", from, func(event ports.ChatEvent) bool {
+		return event.ProviderTurnID == turnID && event.Kind == ports.ChatEventActivityStarted
+	}, 2*time.Second)
+
+	// 한도(조용한 시간의 40배 남짓)보다 훨씬 짧은 시간 안에 닫혀야 한다.
+	_, done := h.waitFor("알리지 않은 도구 뒤의 TurnCompleted", from,
+		isEventKind(ports.ChatEventTurnCompleted), h.quiet+2*time.Second)
+	if done.event.ProviderTurnID != turnID || done.event.TurnState != domain.TurnStateCompleted {
+		t.Fatalf("TurnCompleted = turn %q state %q, want turn %q completed",
+			done.event.ProviderTurnID, done.event.TurnState, turnID)
+	}
+	if waited := done.at.Sub(lastPush); waited < h.quiet {
+		t.Fatalf("마지막 갱신 뒤 %s 만에 닫혔다, 조용한 시간 %s 을 기다려야 한다", waited, h.quiet)
+	}
+}
+
+// 알린 도구의 마지막 갱신이 끝내 오지 않아도, 갱신 없이 조용한 시간이 한도만큼
+// 지나면 자율 턴을 completed 로 닫고 그 도구를 실패로 정리한다.
+func TestProviderInitiatedTurnClosesAfterOpenToolWaitLimit(t *testing.T) {
+	h := startProviderInitiatedHarness(t, &fakeAgent{}, true, 20*time.Millisecond)
+	h.push(backgroundToolCall("stuck-tool", acpsdk.ToolCallStatusInProgress))
+	lastPush := time.Now()
+	_, started := h.waitFor("자율 TurnStarted", 0, isProviderInitiatedStart, 2*time.Second)
+	turnID := started.event.ProviderTurnID
+
+	limit := time.Duration(providerInitiatedOpenToolWaitLimit) * h.quiet
+	doneIdx, done := h.waitFor("한도 뒤의 TurnCompleted", 0,
+		isTurnEvent(ports.ChatEventTurnCompleted, turnID), limit+5*time.Second)
+	if done.event.TurnState != domain.TurnStateCompleted {
+		t.Fatalf("TurnCompleted state = %q, want completed", done.event.TurnState)
+	}
+	if waited := done.at.Sub(lastPush); waited < limit {
+		t.Fatalf("도구가 열린 채 %s 만에 닫혔다, 한도 %s 를 기다려야 한다", waited, limit)
+	}
+	toolIdx, tool := h.waitFor("열린 도구 정리", 0, isTurnEvent(ports.ChatEventActivityCompleted, turnID), time.Second)
+	if toolIdx > doneIdx || tool.event.ActivityStatus != domain.ActivityStatusFailed {
+		t.Fatalf("열린 도구가 TurnCompleted 앞에 failed 로 정리돼야 한다\n%s", dumpRecordedEvents(h.snapshot(), 0))
+	}
+	h.expectNone("한도로 닫힌 뒤의 턴 경계", doneIdx+1, isTurnBoundary, 10*h.quiet)
+}
+
 // 자율 턴 안에서 대기 중인 승인은 닫힘을 막는다. 승인이 풀리면 닫힌다.
 func TestProviderInitiatedTurnWaitsForPendingApproval(t *testing.T) {
 	agent := &fakeAgent{}
@@ -604,6 +660,69 @@ func TestProviderInitiatedTurnInterruptClosesWithoutCancel(t *testing.T) {
 	if cancels != 0 {
 		t.Fatalf("session/cancel %d 번, want 0", cancels)
 	}
+}
+
+// Interrupt 가 띄운 닫는 emit 보다 새 자율 출력이 먼저 턴 경계를 잡아도, 앞
+// 턴의 interrupted TurnCompleted 가 새 턴의 TurnStarted 보다 먼저 나간다.
+// 시험이 turnEmitMu 를 잡아 두고, 새 출력의 처리를 먼저, Interrupt 의 goroutine
+// 을 그다음에 줄 세운 뒤 푼다.
+func TestProviderInitiatedTurnInterruptClosesBeforeNextTurn(t *testing.T) {
+	agent := &fakeAgent{}
+	h := startProviderInitiatedHarness(t, agent, true, time.Hour)
+	conv, ok := h.conv.(*conversation)
+	if !ok {
+		t.Fatalf("conversation type = %T, want *conversation", h.conv)
+	}
+	h.push(acpsdk.UpdateAgentMessageText("첫 자율 출력"))
+	_, started := h.waitFor("첫 자율 TurnStarted", 0, isProviderInitiatedStart, 2*time.Second)
+	firstID := started.event.ProviderTurnID
+
+	conv.turnEmitMu.Lock()
+	held := true
+	defer func() {
+		if held {
+			conv.turnEmitMu.Unlock()
+		}
+	}()
+	pushed := make(chan error, 1)
+	go func() {
+		pushed <- agent.conn.SessionUpdate(context.Background(), acpsdk.SessionNotification{
+			SessionId: acpsdk.SessionId(h.conv.ProviderConversationID()),
+			Update:    acpsdk.UpdateAgentMessageText("다음 자율 출력"),
+		})
+	}()
+	select {
+	case err := <-pushed:
+		if err != nil {
+			t.Fatalf("provider session/update: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("provider session/update 가 돌아오지 않았다")
+	}
+	// 새 출력의 처리가 turnEmitMu 를 기다리게 둔다.
+	time.Sleep(100 * time.Millisecond)
+	if err := h.conv.Interrupt(context.Background(), firstID); err != nil {
+		t.Fatalf("Interrupt(자율 턴) = %v, want nil", err)
+	}
+	// Interrupt 가 띄운 goroutine 이 새 출력 뒤에서 turnEmitMu 를 기다리게 둔다.
+	time.Sleep(50 * time.Millisecond)
+	held = false
+	conv.turnEmitMu.Unlock()
+
+	nextIdx, next := h.waitFor("다음 자율 TurnStarted", 0, func(event ports.ChatEvent) bool {
+		return isProviderInitiatedStart(event) && event.ProviderTurnID != firstID
+	}, 2*time.Second)
+	doneIdx, done := h.waitFor("첫 자율 TurnCompleted", 0,
+		isTurnEvent(ports.ChatEventTurnCompleted, firstID), 2*time.Second)
+	if done.event.TurnState != domain.TurnStateInterrupted {
+		t.Fatalf("첫 자율 TurnCompleted state = %q, want interrupted", done.event.TurnState)
+	}
+	if doneIdx > nextIdx {
+		t.Fatalf("첫 자율 턴(%q)의 TurnCompleted 가 다음 자율 턴(%q)의 TurnStarted 보다 늦게 나왔다\n%s",
+			firstID, next.event.ProviderTurnID, dumpRecordedEvents(h.snapshot(), 0))
+	}
+	h.expectNone("두 번째 interrupted TurnCompleted", doneIdx+1,
+		isTurnEvent(ports.ChatEventTurnCompleted, firstID), 200*time.Millisecond)
 }
 
 // session/load 재생과 RefreshHistory 재생은 사용자 메시지가 없는 출력이어도
