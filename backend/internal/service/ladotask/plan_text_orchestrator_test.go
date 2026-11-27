@@ -38,17 +38,22 @@ func TestOrchestratorSectionInstructsWorkersThroughLadoRelay(t *testing.T) {
 		"Run `ao spawn`, or use `ao send` to message workers: LADO refuses both in this project. A running worker gets your instructions only through `ao lado relay`.",
 		"never by marking a message userAuthored or naming another senderSessionId",
 	} {
-		if !strings.Contains(orchestratorSection, want) {
-			t.Fatalf("LADO orchestrator section lacks %q:\n%s", want, orchestratorSection)
+		for _, runDirectly := range []bool{true, false} {
+			if section := orchestratorSection(runDirectly); !strings.Contains(section, want) {
+				t.Fatalf("LADO orchestrator section (runDirectly %t) lacks %q:\n%s", runDirectly, want, section)
+			}
 		}
 	}
-	// The old workaround, pasting by hand, is only the fallback when LADO
-	// cannot check the developer's words.
-	if strings.Contains(orchestratorSection, "LADO does not deliver your messages to workers yet") {
-		t.Fatalf("LADO orchestrator section still says LADO cannot deliver to workers:\n%s", orchestratorSection)
-	}
-	if !strings.Contains(orchestratorSection, "When LADO cannot check the developer's words, give the developer the worker's ao://sessions link") {
-		t.Fatalf("LADO orchestrator section lacks the paste fallback:\n%s", orchestratorSection)
+	for _, runDirectly := range []bool{true, false} {
+		section := orchestratorSection(runDirectly)
+		// The old workaround, pasting by hand, is only the fallback when LADO
+		// cannot check the developer's words.
+		if strings.Contains(section, "LADO does not deliver your messages to workers yet") {
+			t.Fatalf("LADO orchestrator section still says LADO cannot deliver to workers:\n%s", section)
+		}
+		if !strings.Contains(section, "When LADO cannot check the developer's words, give the developer the worker's ao://sessions link") {
+			t.Fatalf("LADO orchestrator section lacks the paste fallback:\n%s", section)
+		}
 	}
 }
 
@@ -64,11 +69,12 @@ func TestOrchestratorRelayExampleSurvivesTheShell(t *testing.T) {
 	if err != nil {
 		t.Skip("bash is not installed")
 	}
-	start := strings.Index(orchestratorSection, "```\nao lado relay")
+	section := orchestratorSection(true)
+	start := strings.Index(section, "```\nao lado relay")
 	if start < 0 {
-		t.Fatalf("no relay example block in the orchestrator section:\n%s", orchestratorSection)
+		t.Fatalf("no relay example block in the orchestrator section:\n%s", section)
 	}
-	block := orchestratorSection[start+len("```\n"):]
+	block := section[start+len("```\n"):]
 	block = block[:strings.Index(block, "\n```")]
 
 	evidence := `그 워커에게 'A' 와 "B" 를 하고 $HOME, ` + "`date`" + `, !! 도 그대로 둬`
@@ -115,8 +121,64 @@ func TestOrchestratorSectionReleasesAccountLimitsThroughTheCLI(t *testing.T) {
 		"Never edit LADO's database to release a limit.",
 		"an account that hit its usage limit or was released from it",
 	} {
-		if !strings.Contains(orchestratorSection, want) {
-			t.Fatalf("LADO orchestrator section lacks %q:\n%s", want, orchestratorSection)
+		for _, runDirectly := range []bool{true, false} {
+			if section := orchestratorSection(runDirectly); !strings.Contains(section, want) {
+				t.Fatalf("LADO orchestrator section (runDirectly %t) lacks %q:\n%s", runDirectly, want, section)
+			}
 		}
+	}
+}
+
+// LADO fork: the orchestrator puts work on the board the way New Task does in
+// the app (#5). With "New tasks run without plan review" on, the issue it
+// writes is the plan, pinned from the issue's text through issue-plan, with no
+// plan worker or critic; with the setting off, it imports the issue and
+// requests a plan. Either way the developer approves the plan, and the
+// orchestrator reads the setting again, since it can change after the
+// session's instructions were built.
+func TestOrchestratorSectionPutsWorkOnTheBoardByRunDirectly(t *testing.T) {
+	both := []string{
+		"`POST /api/v1/lado/tasks/imports`",
+		"each task it returns carries `issue.sha256`",
+		"`runDirectly` in `GET /api/v1/lado/projects/{projectId}/settings`",
+		"`POST /api/v1/lado/tasks/{taskId}/plan-requests`",
+		"`POST /api/v1/lado/tasks/{taskId}/issue-plan` with `{\"issueSha256\": \"<the task's issue.sha256>\"}`",
+		"The developer can change the setting after your session started: read it again before you put a card on the board",
+		"Start work from a plan the developer has not approved, or approve a plan yourself.",
+		"Offer to put the work on the LADO board instead.",
+	}
+	on := []string{
+		"The setting is on in this project.",
+		"write the issue so it says all the work needs, with its acceptance criteria as a Markdown checklist (`- [ ] ...`)",
+		"create the issue, import it and pin its plan from the issue",
+		"No plan worker or critic runs: the card waits in plan review until the developer approves it in the AO desktop app",
+		"Request a plan from the plan workers instead only when the developer asks for plan review.",
+		"`LADO_ISSUE_CHANGED_SINCE_READ`",
+		"Send a new hash only after you read the task again (`GET /api/v1/lado/tasks/{taskId}` reads the issue again), and only for a change you made yourself or the developer confirmed.",
+	}
+	off := []string{
+		"The setting is off in this project.",
+		"import it and request a plan from the plan workers; the developer approves the plan in the AO desktop app.",
+	}
+	for _, c := range []struct {
+		runDirectly   bool
+		want, without []string
+	}{{true, on, off}, {false, off, on}} {
+		section := orchestratorSection(c.runDirectly)
+		for _, want := range append(slices.Clone(both), c.want...) {
+			if !strings.Contains(section, want) {
+				t.Fatalf("section with runDirectly %t lacks %q:\n%s", c.runDirectly, want, section)
+			}
+		}
+		for _, other := range c.without {
+			if strings.Contains(section, other) {
+				t.Fatalf("section with runDirectly %t has the other path's %q:\n%s", c.runDirectly, other, section)
+			}
+		}
+	}
+	// The two differ only in how a card gets its plan.
+	if strings.TrimSuffix(orchestratorSection(true), orchestratorBoardRunDirectly+orchestratorSectionTail) !=
+		strings.TrimSuffix(orchestratorSection(false), orchestratorBoardPlanReview+orchestratorSectionTail) {
+		t.Fatal("the sections differ outside the way a card gets its plan")
 	}
 }

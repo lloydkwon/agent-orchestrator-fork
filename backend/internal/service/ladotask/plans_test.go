@@ -1240,18 +1240,18 @@ func TestPromptSourceAddsTheSectionOnlyInLadoMode(t *testing.T) {
 	// of LADO's notices (#51).
 	for _, want := range []string{
 		"You are the developer's work assistant",
-		"plan workers write the plans",
+		"a task's plan comes from LADO's plan workers or, when it runs without plan review, from its issue text",
 		// What it does.
 		"Once the developer has allowed something, act within that scope without asking again.",
 		"Investigate and check: read code, logs and databases",
-		"import issues as LADO cards and request plans",
+		"Import an issue as a card with `POST /api/v1/lado/tasks/imports`",
 		"Carry out operations the developer explicitly asks for",
 		"merges only once its integration approval",
 		"never bypass a required check or branch protection",
 		"Instruct a running LADO worker",
 		domain.LadoNoticePrefix,
 		// What it does not do.
-		"Edit, commit or push the repository's source, even when the developer asks you to: that is a LADO task. Offer to request a plan instead.",
+		"Edit, commit or push the repository's source, even when the developer asks you to: that is a LADO task. Offer to put the work on the LADO board instead.",
 		"Run `ao spawn`, or use `ao send` to message workers: LADO refuses both",
 		"not through the daemon's session send API, tmux, a PTY or runtime internals",
 		"never by marking a message userAuthored or naming another senderSessionId",
@@ -1274,6 +1274,23 @@ func TestPromptSourceAddsTheSectionOnlyInLadoMode(t *testing.T) {
 	if section, err := source.OrchestratorSection(ctx, "other"); err != nil || section != "" {
 		t.Fatalf("section outside LADO = %q, %v", section, err)
 	}
+	// The project's "New tasks run without plan review", on by default,
+	// picks how the orchestrator's cards get their plans (#5).
+	if want := orchestratorSection(true); section != want {
+		t.Fatalf("section with run without plan review on = %q, want the issue-plan path", section)
+	}
+	setRunDirectly := func(on bool) {
+		t.Helper()
+		event := domain.LadoAuditEvent{At: pf.now, Actor: "human", Action: "project.run_directly_changed", SubjectKind: "project", SubjectID: "demo", Payload: json.RawMessage(`{}`)}
+		if err := pf.store.SetLadoProjectRunDirectly(ctx, "demo", on, event); err != nil {
+			t.Fatal(err)
+		}
+	}
+	setRunDirectly(false)
+	if got, err := source.OrchestratorSection(ctx, "demo"); err != nil || got != orchestratorSection(false) {
+		t.Fatalf("section with run without plan review off = %q, %v; want the plan request path", got, err)
+	}
+	setRunDirectly(true)
 	if got, err := source.Section(ctx, domain.KindOrchestrator, "demo", "demo-orchestrator-1", domain.HarnessClaudeCode); err != nil || got != section {
 		t.Fatalf("orchestrator's section = %q, %v; want the LADO section", got, err)
 	}
