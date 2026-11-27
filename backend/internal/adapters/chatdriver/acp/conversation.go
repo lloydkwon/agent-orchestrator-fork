@@ -138,6 +138,11 @@ type conversation struct {
 	promptResponseFailure func(acpsdk.PromptResponse) error
 	hibernationCheck      func(context.Context, *acpsdk.ClientSideConnection, acpsdk.SessionId) (bool, error)
 	historyNotice         func(string) bool
+	// providerInitiatedTurns 와 providerInitiatedQuiet 은 Config 의 같은 이름
+	// 설정을 받는다. 자율 턴(provider 가 스스로 연 사이클)을 묶을지와, 마지막
+	// 갱신 뒤 얼마나 조용하면 닫을지를 정한다.
+	providerInitiatedTurns bool
+	providerInitiatedQuiet time.Duration
 	// preamble is standing context attached to the first prompt that actually
 	// reaches the provider. It is the delivery channel for agents that accept no
 	// system-prompt launch flag and ignore session/new _meta but do execute
@@ -1246,7 +1251,7 @@ func (c *conversation) settleOpenItems(turnID string, turnState ...domain.TurnSt
 	toolIDs := sortedKeys(tools)
 	for _, id := range toolIDs {
 		tool := tools[id]
-		if tool.status == acpsdk.ToolCallStatusPending || tool.status == acpsdk.ToolCallStatusInProgress || tool.status == "" {
+		if toolStillOpen(tool.status) {
 			snapshot := *tool
 			snapshot.status = acpsdk.ToolCallStatusFailed
 			event := c.toolEvent(turnID, &snapshot, true)
@@ -1257,6 +1262,17 @@ func (c *conversation) settleOpenItems(turnID string, turnState ...domain.TurnSt
 		}
 	}
 }
+
+// toolStillOpen 은 도구가 아직 끝나지 않은 상태(pending, in_progress, 상태 없음)인지
+// 알려 준다. settleOpenItems 가 실패로 닫을 도구와, 자율 턴의 닫힘을 막는 도구를
+// 같은 기준으로 고른다.
+func toolStillOpen(status acpsdk.ToolCallStatus) bool {
+	return status == acpsdk.ToolCallStatusPending || status == acpsdk.ToolCallStatusInProgress || status == ""
+}
+
+// defaultProviderInitiatedQuiet 은 Config.ProviderInitiatedQuiet 이 0 일 때 쓰는
+// 자율 턴의 조용한 시간이다.
+const defaultProviderInitiatedQuiet = 15 * time.Second
 
 func sortedKeys[T any](values map[string]T) []string {
 	keys := make([]string, 0, len(values))
