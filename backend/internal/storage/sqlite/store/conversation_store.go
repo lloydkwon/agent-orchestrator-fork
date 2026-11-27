@@ -1132,6 +1132,28 @@ func (s *Store) LatestConversationTurn(ctx context.Context, conversationID strin
 	return turnToDomain(row), nil
 }
 
+// LatestPromptedConversationTurn is LatestConversationTurn without the turns
+// the provider opened on its own, those whose provider turn id starts with
+// providerInitiatedPrefix (ports.ProviderInitiatedTurnPrefix). A queued turn
+// has no provider turn id yet and counts as prompted.
+func (s *Store) LatestPromptedConversationTurn(ctx context.Context, conversationID, providerInitiatedPrefix string) (domain.ConversationTurn, error) {
+	if providerInitiatedPrefix == "" {
+		// An empty prefix would match every provider turn id and hide every
+		// dispatched turn.
+		return domain.ConversationTurn{}, errors.New("select latest prompted conversation turn: empty provider-initiated prefix")
+	}
+	row, err := s.qr.SelectLatestPromptedConversationTurn(ctx, gen.SelectLatestPromptedConversationTurnParams{
+		ConversationID: conversationID, ProviderInitiatedPrefix: providerInitiatedPrefix,
+	})
+	if errors.Is(err, sql.ErrNoRows) {
+		return domain.ConversationTurn{}, domain.ErrNoConversationTurn
+	}
+	if err != nil {
+		return domain.ConversationTurn{}, fmt.Errorf("select latest prompted conversation turn: %w", err)
+	}
+	return turnToDomain(row), nil
+}
+
 // TurnByProviderID is the conversation's turn the provider knows as
 // providerTurnID.
 func (s *Store) TurnByProviderID(ctx context.Context, conversationID, providerTurnID string) (domain.ConversationTurn, error) {

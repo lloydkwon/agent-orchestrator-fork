@@ -15,10 +15,12 @@ import (
 // keeps times to the nanosecond, so only another turn is further apart.
 const sameMoment = time.Second
 
-// watchLimit records a worker whose newest turn failed at its usage limit,
-// with the reset its message gives, and the limit of the account the
-// session runs on; it records the limit lifted once a later turn ended; and
-// it resumes the worker once the limit reset (resumeIfDue).
+// watchLimit records a worker whose newest prompted turn failed at its usage
+// limit, with the reset its message gives, and the limit of the account the
+// session runs on; it records the limit lifted once a later prompted turn
+// ended; and it resumes the worker once the limit reset (resumeIfDue). A turn
+// the provider opened on its own neither records nor lifts a limit (issue
+// #6): one task-notification cycle says nothing of the account.
 func (s *Service) watchLimit(ctx context.Context, w *worker, now time.Time) error {
 	lim := w.watch.LadoWatchLimit
 	if w.hasTurn && w.turn.State == domain.TurnStateFailed {
@@ -231,10 +233,16 @@ func turnEnd(t domain.ConversationTurn) time.Time {
 	return t.RequestedAt.UTC()
 }
 
-// quietSince is when the worker last did something: its last activity or
-// the end of its newest turn, whichever is later.
+// quietSince is when the worker last did something: its last activity, the
+// end of its newest turn, the provider's own included (issue #6), or the end
+// of its newest prompted turn, whichever is latest.
 func quietSince(w worker) time.Time {
 	last := w.session.Activity.LastActivityAt.UTC()
+	if w.hasLastTurn {
+		if end := turnEnd(w.lastTurn); end.After(last) {
+			last = end
+		}
+	}
 	if w.hasTurn {
 		if end := turnEnd(w.turn); end.After(last) {
 			last = end
