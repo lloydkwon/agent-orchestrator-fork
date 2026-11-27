@@ -60,6 +60,10 @@ func buildConfig(plugin claudePlugin, log *slog.Logger, onAuthRejected func()) a
 		PromptResponseFailure: claudePromptResponseFailure,
 		CanHibernate:          claudeCanHibernate,
 		HistoryNotice:         claudeTranscriptNotice,
+		// Claude Code 는 백그라운드 작업 완료 알림(<task-notification>)으로 session/prompt 없이
+		// 사이클을 돌고 session/update 만 보낸다. 그 출력을 자율 턴으로 묶어야 세션 활동과
+		// 최신 턴이 그 사이클의 시각으로 바뀐다(이슈 #6). 조용한 시간은 드라이버 기본값을 쓴다.
+		ProviderInitiatedTurns: true,
 		Capabilities: ports.ChatCapabilities{
 			ports.ChatCapabilityStreaming:    true,
 			ports.ChatCapabilityTools:        true,
