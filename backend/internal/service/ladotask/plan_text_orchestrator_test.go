@@ -135,7 +135,9 @@ func TestOrchestratorSectionReleasesAccountLimitsThroughTheCLI(t *testing.T) {
 // plan worker or critic; with the setting off, it imports the issue and
 // requests a plan. Either way the developer approves the plan, and the
 // orchestrator reads the setting again, since it can change after the
-// session's instructions were built.
+// session's instructions were built; the rules for issue-plan (a checklist in
+// the issue, a new hash only after reading the task again) are in both
+// sections for that reason.
 func TestOrchestratorSectionPutsWorkOnTheBoardByRunDirectly(t *testing.T) {
 	both := []string{
 		"`POST /api/v1/lado/tasks/imports`",
@@ -144,17 +146,22 @@ func TestOrchestratorSectionPutsWorkOnTheBoardByRunDirectly(t *testing.T) {
 		"`POST /api/v1/lado/tasks/{taskId}/plan-requests`",
 		"`POST /api/v1/lado/tasks/{taskId}/issue-plan` with `{\"issueSha256\": \"<the task's issue.sha256>\"}`",
 		"The developer can change the setting after your session started: read it again before you put a card on the board",
+		// A session started with the setting off still pins from the issue
+		// once the developer turns the setting on, so the rules for
+		// issue-plan hold either way.
+		"Whenever you pin a plan from the issue with `issue-plan`, the plan is the issue text and nothing more:",
+		"write the issue so it says all the work needs, with its acceptance criteria as a Markdown checklist (`- [ ] ...`)",
+		"tell the developer the card waits in plan review for their approval in the AO desktop app.",
+		"`LADO_ISSUE_CHANGED_SINCE_READ`",
+		"Send a new hash only after you read the task again (`GET /api/v1/lado/tasks/{taskId}` reads the issue again), and only for a change you made yourself or the developer confirmed.",
 		"Start work from a plan the developer has not approved, or approve a plan yourself.",
 		"Offer to put the work on the LADO board instead.",
 	}
 	on := []string{
 		"The setting is on in this project.",
-		"write the issue so it says all the work needs, with its acceptance criteria as a Markdown checklist (`- [ ] ...`)",
 		"create the issue, import it and pin its plan from the issue",
 		"No plan worker or critic runs: the card waits in plan review until the developer approves it in the AO desktop app",
 		"Request a plan from the plan workers instead only when the developer asks for plan review.",
-		"`LADO_ISSUE_CHANGED_SINCE_READ`",
-		"Send a new hash only after you read the task again (`GET /api/v1/lado/tasks/{taskId}` reads the issue again), and only for a change you made yourself or the developer confirmed.",
 	}
 	off := []string{
 		"The setting is off in this project.",

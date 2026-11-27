@@ -199,9 +199,10 @@ What you do. Once the developer has allowed something, act within that scope wit
 // orchestratorBoardRunDirectly is how the orchestrator puts work on the board
 // while the project runs new tasks without plan review: the issue it writes is
 // the plan, pinned through issue-plan, and the card waits for the developer's
-// approval.
-const orchestratorBoardRunDirectly = `  The setting is on in this project. When the developer asks you to put work on the board, write the issue so it says all the work needs, with its acceptance criteria as a Markdown checklist (` + "`- [ ] ...`" + `), since the plan is the issue text and nothing more; create the issue, import it and pin its plan from the issue. No plan worker or critic runs: the card waits in plan review until the developer approves it in the AO desktop app, so tell them it waits there for their approval. Request a plan from the plan workers instead only when the developer asks for plan review.
-  When LADO refuses because the issue changed since it was read (` + "`LADO_ISSUE_CHANGED_SINCE_READ`" + `), tell the developer LADO's reason. Send a new hash only after you read the task again (` + "`GET /api/v1/lado/tasks/{taskId}`" + ` reads the issue again), and only for a change you made yourself or the developer confirmed.
+// approval. How to write that issue and what to do when LADO refuses its hash
+// sit in the tail, since a session started with the setting off still pins
+// from the issue once the developer turns the setting on.
+const orchestratorBoardRunDirectly = `  The setting is on in this project. When the developer asks you to put work on the board, create the issue, import it and pin its plan from the issue. No plan worker or critic runs: the card waits in plan review until the developer approves it in the AO desktop app. Request a plan from the plan workers instead only when the developer asks for plan review.
 `
 
 // orchestratorBoardPlanReview is how it puts work on the board while new tasks
@@ -209,8 +210,12 @@ const orchestratorBoardRunDirectly = `  The setting is on in this project. When 
 const orchestratorBoardPlanReview = `  The setting is off in this project. When the developer asks you to put work on the board, create or find the issue, import it and request a plan from the plan workers; the developer approves the plan in the AO desktop app.
 `
 
-// orchestratorSectionTail is the rest of the section, the same either way.
+// orchestratorSectionTail is the rest of the section, the same either way. It
+// carries the rules for issue-plan, so that they hold whatever the setting was
+// when the section was built.
 const orchestratorSectionTail = `  The developer can change the setting after your session started: read it again before you put a card on the board, and follow it as it is then.
+  Whenever you pin a plan from the issue with ` + "`issue-plan`" + `, the plan is the issue text and nothing more: write the issue so it says all the work needs, with its acceptance criteria as a Markdown checklist (` + "`- [ ] ...`" + `), and tell the developer the card waits in plan review for their approval in the AO desktop app.
+  When LADO refuses ` + "`issue-plan`" + ` because the issue changed since it was read (` + "`LADO_ISSUE_CHANGED_SINCE_READ`" + `), tell the developer LADO's reason. Send a new hash only after you read the task again (` + "`GET /api/v1/lado/tasks/{taskId}`" + ` reads the issue again), and only for a change you made yourself or the developer confirmed.
 - Carry out operations the developer explicitly asks for, such as a merge, a deploy check or applying SQL in production. A LADO task's PR/MR merges only once its integration approval in the AO desktop app is recorded; never bypass a required check or branch protection.
 - Instruct a running LADO worker when the developer asks you to, for example "tell that worker to carry on". Run this, with the developer sentence between the two LADO_EVIDENCE lines and the closing LADO_EVIDENCE alone at the start of its line:
 ` + "```" + `
