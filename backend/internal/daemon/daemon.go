@@ -386,6 +386,9 @@ func Run() error {
 	}
 
 	lcStack := startLifecycle(ctx, cfg.DataDir, store, runtimeAdapter, lifecycleMessenger, notificationWriter, telemetrySink, agents, log)
+	// LADO fork: the reaper started with the lifecycle; it waits for the
+	// startup restore from its first tick (lado_startup_restore_wiring.go).
+	ladoStartupHold := installLadoStartupHold(lcStack.LCM, time.Now)
 
 	// Wire the controller-facing session service over the same store + LCM, the
 	// selected runtime, routed git/scratch workspaces, the per-session agent
@@ -705,7 +708,7 @@ func Run() error {
 	ladoConnections, ladoTasks, ladoRules, ladoQueue, ladoSetup, ladoVerify := lado.connections, lado.tasks, lado.rules, lado.queue, lado.setup, lado.verify
 	// LADO fork: sessions a reboot stopped start again at the startup health
 	// pass below (lado_startup_restore_wiring.go).
-	wireLadoStartupRestore(sessMgr, ladoQueue, lado.watch.watch, lcStack.LCM, log)
+	wireLadoStartupRestore(sessMgr, ladoQueue, lado.watch.watch, store, ladoStartupHold, log)
 	ladoTasksDone := ladoTasks.Start(ctx)
 	ladoSetupDone := startLadoSetup(ctx, ladoSetup, log)
 	reportSessions, ok := sessMgr.(reportSemanticSession)

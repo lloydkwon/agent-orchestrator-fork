@@ -101,6 +101,12 @@ func TestRestartMessageKeepsTheWakeRules(t *testing.T) {
 			f.store.settings[proj1] = settings
 		},
 		"no messenger": func(f *fixture) { f.svc.deps.Messenger = nil },
+		// The owner pressed Stop on the worker's newest turn: LADO does not
+		// start it again.
+		"the owner stopped the turn": func(f *fixture) { f.endTurn(domain.TurnStateInterrupted, "", t0) },
+		// A worker at its usage limit is resumed by the limit watch, at the
+		// reset: the restart message would only fail there again.
+		"a usage limit": func(f *fixture) { f.limitAt(t0, sessionLimit) },
 	} {
 		t.Run(name, func(t *testing.T) {
 			f := newFixture(t)
@@ -110,7 +116,7 @@ func TestRestartMessageKeepsTheWakeRules(t *testing.T) {
 			f.tick(t0.Add(time.Minute))
 			f.tick(t0.Add(2 * time.Minute))
 
-			if len(f.msgs.texts()) != 0 || f.store.auditCount("lado.nudge_sent") != 0 {
+			if slices.Contains(f.msgs.texts(), domain.LadoWakeRestartResumeText) {
 				t.Fatalf("sent %v", f.msgs.texts())
 			}
 		})

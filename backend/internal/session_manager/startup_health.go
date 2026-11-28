@@ -13,6 +13,8 @@ import (
 
 // checkSessionHealth observes existing controllers. Startup must never create a
 // provider, restore a worktree, or replay a task to discover whether it is alive.
+// LADO fork: once it knows an agent is gone, the developer's setting may start
+// it again (lado_startup_restore.go); the observing itself is unchanged.
 func (m *Manager) checkSessionHealth(ctx context.Context, rec domain.SessionRecord) error {
 	if rec.ProvisionState.WithDefault() != domain.SessionProvisionReady {
 		return nil
