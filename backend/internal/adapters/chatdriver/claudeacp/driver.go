@@ -43,7 +43,13 @@ type claudeLaunchAuthenticator interface {
 // plugin. The plugin remains the canonical discovery/auth implementation for
 // both Chat and TUI modes.
 func New(plugin claudePlugin, log *slog.Logger, onAuthRejected func()) ports.ChatDriver {
-	return &checkpointDriver{plugin: plugin, ChatDriver: acpdriver.New(acpdriver.Config{
+	return &checkpointDriver{plugin: plugin, ChatDriver: acpdriver.New(buildConfig(plugin, log, onAuthRejected), log)}
+}
+
+// buildConfig 는 Claude Code 용 일반 ACP 드라이버 설정이다. 시험이 드라이버의
+// 시작 설정을 읽을 수 있게 New 에서 떼어 두었다.
+func buildConfig(plugin claudePlugin, log *slog.Logger, onAuthRejected func()) acpdriver.Config {
+	return acpdriver.Config{
 		Harness: domain.HarnessClaudeCode,
 		// A live rejection is the ground truth that outranks any cached
 		// verdict, so drop the cache the moment one arrives. This is also the
@@ -54,6 +60,10 @@ func New(plugin claudePlugin, log *slog.Logger, onAuthRejected func()) ports.Cha
 		PromptResponseFailure: claudePromptResponseFailure,
 		CanHibernate:          claudeCanHibernate,
 		HistoryNotice:         claudeTranscriptNotice,
+		// Claude Code 는 백그라운드 작업 완료 알림(<task-notification>)으로 session/prompt 없이
+		// 사이클을 돌고 session/update 만 보낸다. 그 출력을 자율 턴으로 묶어야 세션 활동과
+		// 최신 턴이 그 사이클의 시각으로 바뀐다(이슈 #6). 조용한 시간은 드라이버 기본값을 쓴다.
+		ProviderInitiatedTurns: true,
 		Capabilities: ports.ChatCapabilities{
 			ports.ChatCapabilityStreaming:    true,
 			ports.ChatCapabilityTools:        true,
@@ -112,7 +122,7 @@ func New(plugin claudePlugin, log *slog.Logger, onAuthRejected func()) ports.Cha
 		SessionMeta:    claudeSessionMeta,
 		SessionMode:    claudeSessionMode,
 		SessionOptions: claudeSessionOptions,
-	}, log)}
+	}
 }
 
 func claudeCanHibernate(ctx context.Context, conn *acpsdk.ClientSideConnection, id acpsdk.SessionId) (bool, error) {

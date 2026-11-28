@@ -132,6 +132,13 @@ type Config struct {
 	// correction that covers every credential source — including the Bedrock
 	// and Vertex chains AO cannot inspect at all. Optional.
 	OnAuthRejected func()
+	// ProviderInitiatedTurns 를 켜면, 사용자 턴이 없을 때 provider 가 스스로 보낸
+	// 출력(agent_message_chunk, tool_call 등)을 ports.ProviderInitiatedTurnPrefix
+	// id 의 자율 턴으로 묶어 TurnStarted 와 TurnCompleted 를 낸다. 기본은 꺼짐이다.
+	ProviderInitiatedTurns bool
+	// ProviderInitiatedQuiet 는 자율 턴의 마지막 갱신 뒤 이만큼 조용하면 턴을
+	// 닫는 시간이다. 0 이면 defaultProviderInitiatedQuiet(15초)를 쓴다.
+	ProviderInitiatedQuiet time.Duration
 }
 
 // TurnSettingsValidator validates live turn settings against launch-time state.
@@ -626,6 +633,8 @@ func (d *Driver) initialize(
 	conv.decodeConversationID = d.cfg.DecodeProviderConversationID
 	conv.historyNotice = d.cfg.HistoryNotice
 	conv.requireAdvertised = d.cfg.RequireAdvertisedOptions
+	conv.providerInitiatedTurns = d.cfg.ProviderInitiatedTurns
+	conv.providerInitiatedQuiet = d.cfg.ProviderInitiatedQuiet
 	if proc.reconnected {
 		state := proc.acpState
 		if state == nil || len(state.InitializeResult) == 0 || len(state.SessionResult) == 0 || state.SessionID == "" {

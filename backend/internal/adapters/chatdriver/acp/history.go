@@ -55,7 +55,7 @@ func (c *refreshableConversation) loadHistory(ctx context.Context) (acpsdk.LoadS
 			return acpsdk.LoadSessionResponse{}, fmt.Errorf("close ACP session before reload: %w", err)
 		}
 	}
-	c.beginHistoryReplay(string(c.loadRequest.SessionId))
+	c.closeProviderInitiatedTurnBeforeReplay()
 	response, err := c.conn.LoadSession(ctx, c.loadRequest)
 	if err != nil {
 		c.abortHistoryReplay()
@@ -69,6 +69,23 @@ func (c *refreshableConversation) loadHistory(ctx context.Context) (acpsdk.LoadS
 	}
 	c.loaded = true
 	return response, nil
+}
+
+// closeProviderInitiatedTurnBeforeReplay 는 열린 자율 턴을 completed 로 닫은 뒤
+// beginHistoryReplay 를 부른다. 닫는 이벤트는 재생이 시작되기 전이라 live 로
+// 나간다. 재생 시작까지 turnEmitMu 를 쥐어, 그 사이에 온 live 갱신이 새 자율
+// 턴을 열지 못하게 한다. 재생 중의 갱신은 history 로 잡혀 자율 턴을 열지 않는다.
+// RefreshHistory 는 controller 의 Start 경로에서만 불리고 이벤트를 읽는
+// goroutine 이 아니므로, 여기서 동기로 emit 해도 그 goroutine 을 막지 않는다.
+func (c *refreshableConversation) closeProviderInitiatedTurnBeforeReplay() {
+	unlockBoundary := c.lockTurnBoundary()
+	defer unlockBoundary()
+	c.emitInterruptedProviderTurn()
+	c.mu.Lock()
+	closing := c.takeProviderInitiatedTurnLocked()
+	c.mu.Unlock()
+	c.emitClosingTurn(closing, domain.TurnStateCompleted)
+	c.beginHistoryReplay(string(c.loadRequest.SessionId))
 }
 
 // captureReplayUpdate also accepts arrivals during normalization. A response

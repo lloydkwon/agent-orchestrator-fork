@@ -358,3 +358,15 @@ func TestClaudeAuthRejectionNotifiesDaemon(t *testing.T) {
 		t.Fatalf("daemon callback calls = %d, want 1", called)
 	}
 }
+
+// Claude Code 는 백그라운드 작업 완료 알림(<task-notification>)으로 사용자 프롬프트 없이 사이클을
+// 돈다. 그 출력이 활동과 턴으로 기록되려면 이 드라이버가 자율 턴을 켜야 한다(이슈 #6).
+func TestClaudeACPEnablesProviderInitiatedTurns(t *testing.T) {
+	cfg := buildConfig(reconnectPlugin{}, nil, nil)
+	if !cfg.ProviderInitiatedTurns {
+		t.Fatal("ProviderInitiatedTurns = false, want the Claude Code driver to record provider-initiated turns")
+	}
+	if cfg.ProviderInitiatedQuiet != 0 {
+		t.Fatalf("ProviderInitiatedQuiet = %s, want 0 so the driver's default quiet period applies", cfg.ProviderInitiatedQuiet)
+	}
+}
