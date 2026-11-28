@@ -13,7 +13,8 @@ import (
 
 const (
 	// RemoteManifestURL is the only production catalog origin AO contacts.
-	RemoteManifestURL = "https://raw.githubusercontent.com/Untrivial-ai/agent-orchestrator/main/pricing/catalog/v1/manifest.json"
+	// LADO fork: the catalog comes from the fork, not from upstream.
+	RemoteManifestURL = "https://raw.githubusercontent.com/LJY981008/agent-orchestrator-fork/main/pricing/catalog/v1/manifest.json"
 	// ManifestMaxBytes bounds the untrusted remote manifest response.
 	ManifestMaxBytes int64 = 1 << 20
 	// ProviderMaxBytes bounds each untrusted provider response.
