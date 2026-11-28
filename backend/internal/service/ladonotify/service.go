@@ -1,7 +1,8 @@
 // Package ladonotify tells each LADO project's orchestrator what happened to
 // its tasks, one line per event (docs/LJY-PRD/TDD.md §5.1): a plan request
 // taken, a revision pinned, a plan request that failed, a run that started, a
-// pull request that opened, work that completed and a run that failed. The
+// pull request that opened, a PR head waiting for its integration approval,
+// work that completed and a run that failed. The
 // orchestrator relays them to the developer; plan text never goes with them.
 //
 // The service reads LADO's stored facts on the plan loop's timer and keeps one
@@ -168,12 +169,13 @@ func (s *Service) collectAlerts(ctx context.Context, since, now time.Time) error
 	return nil
 }
 
-// collectRun adds the notices of a task's run: its start, its PR, and its
-// end when it completed or failed. A queue entry that ran out of attempts
-// failed without a run. A run in parts starts when its parts run starts,
-// before Execution holds a worker: its part workers never open the pull
-// request, and its integration worker, which does, starts as the
-// integration.
+// collectRun adds the notices of a task's run: its start, its PR, its wait
+// for the integration approval, and its end when it completed or failed. A
+// queue entry that ran out of attempts failed without a run. A run in parts
+// starts when its parts run starts, before Execution holds a worker: its part
+// workers never open the pull request, and its integration worker, which does,
+// starts as the integration. The wait is told once per set of PR heads: a
+// head pushed after a review waits again.
 func (s *Service) collectRun(ctx context.Context, task domain.LadoTask, since, now time.Time) {
 	n := issueNumber(task.IssueRef)
 	q := task.Queue
@@ -197,11 +199,23 @@ func (s *Service) collectRun(ctx context.Context, task domain.LadoTask, since, n
 		s.add(ctx, task.ProjectID, "pr:"+run+":"+e.PR.URL, domain.LadoNoticePROpened(n, e.PR.URL), now, now)
 	}
 	switch state, reason := e.State(); state {
+	case domain.LadoTaskIntegrationPending:
+		s.add(ctx, task.ProjectID, "integration:"+run+":"+trackedHeads(e), domain.LadoNoticeIntegrationPending(n), now, now)
 	case domain.LadoTaskCompleted:
 		s.add(ctx, task.ProjectID, "completed:"+run, domain.LadoNoticeCompleted(n), now, now)
 	case domain.LadoTaskFailed:
 		s.add(ctx, task.ProjectID, "failed:"+run, domain.LadoNoticeRunFailed(n, reason), now, now)
 	}
+}
+
+// trackedHeads names the head of each PR the run tracks, in merge order.
+func trackedHeads(e domain.LadoExecution) string {
+	prs := e.TrackedPRs()
+	heads := make([]string, 0, len(prs))
+	for _, pr := range prs {
+		heads = append(heads, pr.PR.HeadSHA)
+	}
+	return strings.Join(heads, ",")
 }
 
 // add queues a notice once per key. A key this process already queued, or

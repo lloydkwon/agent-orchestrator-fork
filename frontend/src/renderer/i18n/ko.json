@@ -4467,6 +4467,7 @@
 	"lado.alert.agentUnavailable": "에이전트 실행 파일을 쓸 수 없어 새 워커를 기다리게 함",
 	"lado.alert.notificationTitle": "LADO 알림 · {{issue}}",
 	"lado.alert.notificationTitleNoIssue": "LADO 알림",
+	"lado.notice.notificationTitle": "LADO · {{project}}",
 	"lado.card.alerts": "확인 안 한 알림: {{alerts}}개",
 	"lado.card.costHint": "작업 세션들의 API 환산 비용 추정",
 	"lado.watch.title": "워커 감시",

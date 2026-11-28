@@ -371,3 +371,37 @@ func TestTickMovesWatchAlertsToTheOutboxOnce(t *testing.T) {
 		}
 	}
 }
+
+// A run whose PR waits for its integration approval tells so once per head:
+// a newer head waiting again tells again, and an approved head tells
+// nothing more.
+func TestTickTellsAnIntegrationWaitOncePerHead(t *testing.T) {
+	f := newFixture()
+	ref := domain.IssueID("github:acme/demo#31")
+	waiting := func(head string, approved bool) []domain.LadoTask {
+		return []domain.LadoTask{{ID: "lado-task-1", ProjectID: "demo", IssueRef: ref, Execution: domain.LadoExecution{
+			SessionID: "demo-9", StartedAt: t0.Add(time.Minute),
+			PR:           domain.LadoExecutionPR{URL: "https://github.com/acme/demo/pull/41", HeadSHA: head},
+			Verification: domain.LadoExecutionVerification{HeadSHA: head, Outcome: domain.LadoVerifyPass},
+			Integration:  domain.LadoExecutionIntegration{HeadApproved: approved},
+		}}}
+	}
+	f.orch.live = false
+	f.store.tasks["demo"] = waiting("aaa", false)
+	f.tick(t)
+	f.tick(t)
+	f.store.tasks["demo"] = waiting("bbb", false)
+	f.tick(t)
+	f.store.tasks["demo"] = waiting("bbb", true)
+	f.tick(t)
+	got := f.store.texts(false)
+	want := []string{
+		"LADO 알림: #31 실행 시작",
+		"LADO 알림: #31 PR #41 열림",
+		"LADO 알림: #31 통합 승인 대기 — 칸반에서 승인",
+		"LADO 알림: #31 통합 승인 대기 — 칸반에서 승인",
+	}
+	if !slices.Equal(got, want) {
+		t.Fatalf("notices =\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+}

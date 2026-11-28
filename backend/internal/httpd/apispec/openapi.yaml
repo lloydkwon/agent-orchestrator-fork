@@ -4130,6 +4130,46 @@ paths:
         into that session's project; an update sends the revision it read as baseRevision
       tags:
       - lado
+  /api/v1/lado/notices/{noticeId}:
+    get:
+      operationId: getLadoNotice
+      parameters:
+      - description: LADO orchestrator notice id.
+        in: path
+        name: noticeId
+        required: true
+        schema:
+          description: LADO orchestrator notice id.
+          type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LadoNoticeResponse'
+          description: OK
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Not Found
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Internal Server Error
+        "501":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Not Implemented
+      summary: Get one orchestrator notice, for the desktop notification its change
+        event names
+      tags:
+      - lado
   /api/v1/lado/phone/disable:
     post:
       operationId: disableLadoPhone
@@ -24273,6 +24313,35 @@ components:
       - autoPlanMinCount
       - disconnectAlertMinutes
       - sources
+      type: object
+    LadoNoticeResponse:
+      properties:
+        createdAt:
+          format: date-time
+          type: string
+        id:
+          format: int64
+          type: integer
+        key:
+          description: What the notice tells of, as kind:subject; the kind before
+            the first colon sorts it (revision, integration, failed, started, ...).
+          type: string
+        occurredAt:
+          format: date-time
+          type: string
+        projectId:
+          type: string
+        text:
+          description: 'The line, starting with "LADO 알림: "; it never carries plan
+            text.'
+          type: string
+      required:
+      - id
+      - projectId
+      - key
+      - text
+      - occurredAt
+      - createdAt
       type: object
     LadoPartRunRepoResponse:
       properties:

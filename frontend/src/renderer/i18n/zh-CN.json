@@ -4449,6 +4449,7 @@
 	"lado.alert.agentUnavailable": "代理的可执行文件无法使用，新的工作者正在等待",
 	"lado.alert.notificationTitle": "LADO 提醒 · {{issue}}",
 	"lado.alert.notificationTitleNoIssue": "LADO 提醒",
+	"lado.notice.notificationTitle": "LADO · {{project}}",
 	"lado.card.alerts": "未查看的提醒: {{alerts}} 个",
 	"lado.card.costHint": "任务各会话按 API 价格的估算费用",
 	"lado.watch.title": "工作者监视",

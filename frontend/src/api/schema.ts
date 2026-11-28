@@ -1580,6 +1580,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/lado/notices/{noticeId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get one orchestrator notice, for the desktop notification its change event names */
+        get: operations["getLadoNotice"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/lado/phone/disable": {
         parameters: {
             query?: never;
@@ -8333,6 +8350,19 @@ export interface components {
              * @description When the settings were last saved; omitted before they were.
              */
             updatedAt?: null | string;
+        };
+        LadoNoticeResponse: {
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: int64 */
+            id: number;
+            /** @description What the notice tells of, as kind:subject; the kind before the first colon sorts it (revision, integration, failed, started, ...). */
+            key: string;
+            /** Format: date-time */
+            occurredAt: string;
+            projectId: string;
+            /** @description The line, starting with "LADO 알림: "; it never carries plan text. */
+            text: string;
         };
         LadoPartRunRepoResponse: {
             /** @description The repository's base branch the dispatch resolved. */
@@ -17426,6 +17456,56 @@ export interface operations {
             };
             /** @description Conflict */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Not Implemented */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+        };
+    };
+    getLadoNotice: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description LADO orchestrator notice id. */
+                noticeId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LadoNoticeResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

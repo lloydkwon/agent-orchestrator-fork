@@ -6,6 +6,8 @@ package store
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 
@@ -52,6 +54,19 @@ func (s *Store) ListLadoOrchestratorNotices(ctx context.Context, projectID domai
 		return nil, fmt.Errorf("list LADO notices: %w", err)
 	}
 	return ladoNoticesFromGen(rows), nil
+}
+
+// LadoOrchestratorNotice reads one notice, for the desktop notification its
+// change event asks for. ok is false when it does not exist.
+func (s *Store) LadoOrchestratorNotice(ctx context.Context, id int64) (domain.LadoOrchestratorNotice, bool, error) {
+	row, err := s.qr.GetLadoOrchestratorNotice(ctx, id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return domain.LadoOrchestratorNotice{}, false, nil
+	}
+	if err != nil {
+		return domain.LadoOrchestratorNotice{}, false, fmt.Errorf("read LADO notice: %w", err)
+	}
+	return ladoNoticesFromGen([]gen.LadoOrchestratorNotice{row})[0], true, nil
 }
 
 // MarkLadoOrchestratorNoticesSent records that the notices went to the

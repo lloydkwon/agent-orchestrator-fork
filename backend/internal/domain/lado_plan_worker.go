@@ -716,6 +716,9 @@ const (
 	ladoNoticePROpenedURL = "#%d PR 열림"
 	ladoNoticeCompleted   = "#%d 완료"
 	ladoNoticeRunFailed   = "#%d 실행 실패: %s"
+	// ladoNoticeIntegrationPending is LADO fork's: a verified head waits for
+	// the integration approval, which only a person gives in the app.
+	ladoNoticeIntegrationPending = "#%d 통합 승인 대기 — 칸반에서 승인"
 )
 
 // ladoNoticeReasons are the short reasons a notice gives, by code.
@@ -778,6 +781,12 @@ func LadoNoticePROpened(issue int, prURL string) string {
 
 // LadoNoticeCompleted is the line for a task whose work merged.
 func LadoNoticeCompleted(issue int) string { return ladoNoticeLine(ladoNoticeCompleted, issue) }
+
+// LadoNoticeIntegrationPending is the line for a run whose PR head waits
+// for its integration approval.
+func LadoNoticeIntegrationPending(issue int) string {
+	return ladoNoticeLine(ladoNoticeIntegrationPending, issue)
+}
 
 // LadoNoticeRunFailed is the line for a run that failed with code.
 func LadoNoticeRunFailed(issue int, code string) string {

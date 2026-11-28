@@ -75,6 +75,7 @@ export type LadoProjectUsage = components["schemas"]["LadoProjectUsageResponse"]
 export type LadoRelay = components["schemas"]["LadoRelayResponse"];
 export type LadoRelayState = LadoRelay["state"];
 export type LadoAlert = components["schemas"]["LadoAlertResponse"];
+export type LadoNotice = components["schemas"]["LadoNoticeResponse"];
 export type LadoUnseenAlertCounts = components["schemas"]["LadoUnseenAlertCountsResponse"];
 export type LadoAlertKind = LadoAlert["kind"];
 export type LadoWatchSettings = components["schemas"]["LadoWatchSettingsResponse"];
@@ -900,6 +901,16 @@ export async function fetchLadoAlerts(projectId: string, filter: LadoAlertFilter
 	});
 	if (error) throw ladoError(error, "Could not load the alerts");
 	return data.alerts;
+}
+
+/** One orchestrator notice, for the desktop notification its change event names; null once it is gone. */
+export async function fetchLadoNotice(noticeId: number): Promise<LadoNotice | null> {
+	const { data, error, response } = await apiClient.GET("/api/v1/lado/notices/{noticeId}", {
+		params: { path: { noticeId: String(noticeId) } },
+	});
+	if (response.status === 404) return null;
+	if (error) throw ladoError(error, "Could not load the notice");
+	return data;
 }
 
 /** Marks an alert seen; an alert seen before keeps its first time. */

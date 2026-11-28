@@ -314,3 +314,32 @@ describe("createLadoEventBatch and database changes", () => {
 		expect(batch.note({ kind: "lado_db_change", sessionId: "demo-3" } as Payload)).toBe(false);
 	});
 });
+
+// LADO fork: an orchestrator notice's INSERT hands the notice on for its
+// desktop notification, once per batch; it refreshes nothing.
+describe("createLadoEventBatch and orchestrator notices", () => {
+	it("hands a queued notice on once and refreshes nothing", () => {
+		const queryClient = new QueryClient();
+		queryClient.setQueryData(ladoTasksQueryKey("demo"), []);
+		const onNewNotices = vi.fn();
+		const batch = createLadoEventBatch(queryClient, { onNewNotices });
+		const insert = { kind: "lado_notice", noticeId: 5, op: "insert", projectId: "demo" };
+		for (const payload of [insert, insert]) expect(batch.note(payload, { type: "session_updated", projectId: "demo" })).toBe(true);
+		const invalidate = vi.fn();
+		batch.flush(invalidate);
+		expect(invalidate).not.toHaveBeenCalled();
+		expect(onNewNotices).toHaveBeenCalledTimes(1);
+		expect(onNewNotices).toHaveBeenCalledWith([{ noticeId: 5, projectId: "demo" }]);
+		batch.flush(() => undefined);
+		expect(onNewNotices).toHaveBeenCalledTimes(1);
+	});
+
+	it("takes a notice event without an id or project as LADO's and hands nothing on", () => {
+		const onNewNotices = vi.fn();
+		const batch = createLadoEventBatch(new QueryClient(), { onNewNotices });
+		expect(batch.note({ kind: "lado_notice", op: "insert", projectId: "demo" })).toBe(true);
+		expect(batch.note({ kind: "lado_notice", noticeId: 6, op: "insert" })).toBe(false);
+		batch.flush(() => undefined);
+		expect(onNewNotices).not.toHaveBeenCalled();
+	});
+});

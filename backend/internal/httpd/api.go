@@ -87,6 +87,8 @@ type APIDeps struct {
 	LadoDBChanges controllers.LadoDBChangeService
 	// LadoPhone is approving plans and integrations with a phone passkey.
 	LadoPhone controllers.LadoPhoneService
+	// LadoNotices reads one orchestrator notice for its desktop notification.
+	LadoNotices controllers.LadoNoticeService
 	// ProjectMemos serves the orchestrator's project memo (issue #50). Nil
 	// builds the default over Projects and the config's data dir.
 	ProjectMemos controllers.ProjectMemoService
@@ -243,7 +245,7 @@ func newAPIWithLogger(cfg config.Config, deps APIDeps, log *slog.Logger) *API {
 		fs:            &controllers.FSController{Svc: deps.Directories},
 		shellTerms:    &controllers.ShellTerminalsController{Svc: deps.ShellTerminals},
 		cues:          &controllers.CuesController{Svc: deps.Cues},
-		lado:          &controllers.LadoController{Projects: deps.LadoProjects, Connections: deps.LadoConnections, Tasks: deps.LadoTasks, Rules: deps.LadoRules, Queue: deps.LadoQueue, Setup: deps.LadoSetup, Verify: deps.LadoVerify, Chrome: deps.LadoClaudeChrome, Usage: deps.LadoUsage, Watch: deps.LadoWatch, Compact: deps.LadoCompact, Knowledge: deps.LadoKnowledge, Presence: deps.LadoPresence, Relay: deps.LadoRelay, LogWatch: deps.LadoLogWatch, AccountLimits: deps.LadoAccountLimits, Background: deps.LadoBackground, DBChanges: deps.LadoDBChanges, Phone: deps.LadoPhone},
+		lado:          &controllers.LadoController{Projects: deps.LadoProjects, Connections: deps.LadoConnections, Tasks: deps.LadoTasks, Rules: deps.LadoRules, Queue: deps.LadoQueue, Setup: deps.LadoSetup, Verify: deps.LadoVerify, Chrome: deps.LadoClaudeChrome, Usage: deps.LadoUsage, Watch: deps.LadoWatch, Compact: deps.LadoCompact, Knowledge: deps.LadoKnowledge, Presence: deps.LadoPresence, Relay: deps.LadoRelay, LogWatch: deps.LadoLogWatch, AccountLimits: deps.LadoAccountLimits, Background: deps.LadoBackground, DBChanges: deps.LadoDBChanges, Phone: deps.LadoPhone, Notices: deps.LadoNotices},
 		projectMemos:  &controllers.ProjectMemoController{Svc: projectMemoServiceFor(cfg, deps)},
 		conversations: &controllers.ConversationsController{Svc: deps.Conversations, Renders: attachmentstore.New(cfg.DataDir)},
 		settings:      &controllers.SettingsController{Svc: deps.Settings},

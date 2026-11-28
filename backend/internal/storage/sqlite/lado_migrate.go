@@ -207,6 +207,21 @@ END`,
 	ladoBackgroundCDCTrigger("lado_cdc_session_background_delete", "AFTER DELETE ON lado_session_background", "", "OLD"),
 	ladoAlertCDCTrigger("lado_cdc_alerts_insert", "AFTER INSERT ON lado_alerts", "", "insert"),
 	ladoAlertCDCTrigger("lado_cdc_alerts_update", "AFTER UPDATE ON lado_alerts", "WHEN OLD.seen_at IS NOT NEW.seen_at", "update"),
+	// An orchestrator notice publishes once, when LADO queues it, so the
+	// desktop app shows it as a notification too. The change names the notice
+	// only: the event stream also reaches the LAN, and its text stays on
+	// LADO's loopback routes. A repeated key inserts nothing, so it publishes
+	// nothing; sending or dropping a notice publishes nothing either.
+	`CREATE TRIGGER lado_cdc_orchestrator_notices_insert
+AFTER INSERT ON lado_orchestrator_notices
+BEGIN
+    INSERT INTO change_log (project_id, session_id, event_type, payload, created_at)
+    SELECT projects.id, NULL, 'session_updated',
+        json_object('kind', 'lado_notice', 'noticeId', NEW.id, 'op', 'insert', 'projectId', projects.id),
+        datetime('now')
+    FROM projects
+    WHERE projects.id = NEW.project_id;
+END`,
 	// The log watch publishes a lado_log_watch change in the row's project:
 	// a fingerprint when it is recorded and when what the incidents and the
 	// card read of it changes, the settings when they are saved or the burst

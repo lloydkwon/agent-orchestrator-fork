@@ -4467,6 +4467,7 @@
 	"lado.alert.agentUnavailable": "エージェントの実行ファイルを使えないため新しいワーカーを待機させています",
 	"lado.alert.notificationTitle": "LADO アラート · {{issue}}",
 	"lado.alert.notificationTitleNoIssue": "LADO アラート",
+	"lado.notice.notificationTitle": "LADO · {{project}}",
 	"lado.card.alerts": "未確認のアラート: {{alerts}} 件",
 	"lado.card.costHint": "タスクのセッションの API 料金での推定コスト",
 	"lado.watch.title": "ワーカー監視",

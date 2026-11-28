@@ -62,6 +62,9 @@ type LadoController struct {
 	// desktop app's routes that turn it on and enroll passkeys. Nil answers
 	// 501 until the daemon wires it.
 	Phone LadoPhoneService
+	// Notices reads one orchestrator notice for its desktop notification.
+	// Nil answers 501.
+	Notices LadoNoticeService
 }
 
 const (
@@ -124,6 +127,7 @@ func (c *LadoController) Register(r chi.Router) {
 	c.registerBackground(r)
 	c.registerDBChanges(r)
 	c.registerPhone(r)
+	c.registerNotices(r)
 }
 
 func (c *LadoController) getProjectSettings(w http.ResponseWriter, r *http.Request) {

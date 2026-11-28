@@ -153,6 +153,8 @@ var ladoSchemaNames = map[string]string{ //nolint:gosec // G101: schema names, n
 	"ControllersLadoAlertListResponse":             "LadoAlertListResponse",
 	"ControllersLadoUnseenAlertCountResponse":      "LadoUnseenAlertCountResponse",
 	"ControllersLadoUnseenAlertCountsResponse":     "LadoUnseenAlertCountsResponse",
+	"ControllersLadoNoticeIDParam":                 "LadoNoticeIDParam",
+	"ControllersLadoNoticeResponse":                "LadoNoticeResponse",
 	"ControllersLadoCompactWarningResponse":        "LadoCompactWarningResponse",
 	"ControllersLadoPlanPartResponse":              "LadoPlanPartResponse",
 	"ControllersLadoPlanPartWarningResponse":       "LadoPlanPartWarningResponse",
@@ -605,6 +607,12 @@ func ladoOperations() []operation {
 			summary:    "Mark an alert seen; an alert seen before keeps its first time",
 			pathParams: []any{controllers.LadoAlertIDParam{}},
 			resps:      ladoResps(http.StatusOK, controllers.LadoAlertResponse{}, http.StatusNotFound),
+		},
+		{
+			method: http.MethodGet, path: "/api/v1/lado/notices/{noticeId}", id: "getLadoNotice", tag: "lado",
+			summary:    "Get one orchestrator notice, for the desktop notification its change event names",
+			pathParams: []any{controllers.LadoNoticeIDParam{}},
+			resps:      ladoResps(http.StatusOK, controllers.LadoNoticeResponse{}, http.StatusNotFound),
 		},
 		{
 			method: http.MethodGet, path: "/api/v1/lado/timings", id: "getLadoTimings", tag: "lado",

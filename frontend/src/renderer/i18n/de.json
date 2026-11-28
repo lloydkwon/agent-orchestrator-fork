@@ -4467,6 +4467,7 @@
 	"lado.alert.agentUnavailable": "Das Programm des Agents läuft nicht; LADO hält den neuen Worker zurück",
 	"lado.alert.notificationTitle": "LADO-Hinweis · {{issue}}",
 	"lado.alert.notificationTitleNoIssue": "LADO-Hinweis",
+	"lado.notice.notificationTitle": "LADO · {{project}}",
 	"lado.card.alerts": "Ungesehene Hinweise: {{alerts}}",
 	"lado.card.costHint": "Geschätzte Kosten der Sitzungen der Aufgabe zu API-Preisen",
 	"lado.watch.title": "Worker-Überwachung",

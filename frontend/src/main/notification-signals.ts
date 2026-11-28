@@ -82,9 +82,10 @@ export function toastSilent(
  * LADO fork: the types whose Linux toast is critical. A GNOME session in Do
  * Not Disturb shows a banner only for a critical notification and files every
  * other one in the message list, so these are the ones the user has to see: an
- * agent waiting on the user, a PR waiting on a merge, and a LADO alert.
+ * agent waiting on the user, a PR waiting on a merge, a LADO alert, and a LADO
+ * orchestrator notice a person has to act on (lado-notice-notifications).
  */
-const CRITICAL_TOAST_TYPES: ReadonlySet<string> = new Set(["needs_input", "ready_to_merge", "lado_alert"]);
+const CRITICAL_TOAST_TYPES: ReadonlySet<string> = new Set(["needs_input", "ready_to_merge", "lado_alert", "lado_notice_urgent"]);
 
 /**
  * The `urgency` of the OS toast, or `undefined` where Electron ignores it

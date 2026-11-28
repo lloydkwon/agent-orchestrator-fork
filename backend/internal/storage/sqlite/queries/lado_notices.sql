@@ -18,6 +18,11 @@ FROM lado_orchestrator_notices
 WHERE project_id = ?
 ORDER BY occurred_at, id;
 
+-- name: GetLadoOrchestratorNotice :one
+SELECT id, project_id, notice_key, text, occurred_at, created_at, sent_at, sent_to, dropped_at
+FROM lado_orchestrator_notices
+WHERE id = ?;
+
 -- name: MarkLadoOrchestratorNoticeSent :execrows
 UPDATE lado_orchestrator_notices
 SET sent_at = ?,

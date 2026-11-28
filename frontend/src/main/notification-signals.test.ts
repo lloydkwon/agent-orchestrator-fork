@@ -97,11 +97,11 @@ describe("toastSilent", () => {
 // LADO fork: a GNOME session in Do Not Disturb shows a banner only for a
 // critical notification; a normal one goes to the message list unseen.
 describe("toastUrgency", () => {
-	it.each(["needs_input", "ready_to_merge", "lado_alert"])("on linux marks %s critical", (type) => {
+	it.each(["needs_input", "ready_to_merge", "lado_alert", "lado_notice_urgent"])("on linux marks %s critical", (type) => {
 		expect(toastUrgency("linux", type)).toBe("critical");
 	});
 
-	it.each(["pr_merged", "pr_closed_unmerged", "review_completed", "some_future_type"])(
+	it.each(["pr_merged", "pr_closed_unmerged", "review_completed", "lado_notice", "some_future_type"])(
 		"on linux keeps %s normal",
 		(type) => {
 			expect(toastUrgency("linux", type)).toBe("normal");

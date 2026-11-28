@@ -1086,6 +1086,7 @@ func Run() error {
 		LadoBackground:     store,
 		LadoDBChanges:      ladoDBChanges,
 		LadoPhone:          ladoPhone,
+		LadoNotices:        store,
 		LadoPresence:       newLadoPresence(browserRuntimeToken, os.Getenv(browserruntime.RuntimeTokenStdinEnv) == "1", log),
 		AgentAuth:          agentAuthSvc,
 		GitHub:             newGitHubStatusService(githubpat.New(cfg.DataDir), prReader),

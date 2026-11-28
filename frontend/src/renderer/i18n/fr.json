@@ -4542,6 +4542,7 @@
 	"lado.alert.agentUnavailable": "Le programme de l’agent ne peut pas s’exécuter ; LADO met le nouveau worker en attente",
 	"lado.alert.notificationTitle": "Alerte LADO · {{issue}}",
 	"lado.alert.notificationTitleNoIssue": "Alerte LADO",
+	"lado.notice.notificationTitle": "LADO · {{project}}",
 	"lado.card.alerts": "Alertes non vues : {{alerts}}",
 	"lado.card.costHint": "Coût estimé des sessions de la tâche aux prix de l’API",
 	"lado.watch.title": "Surveillance des workers",

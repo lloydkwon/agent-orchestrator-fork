@@ -4448,6 +4448,7 @@
 	"lado.alert.agentUnavailable": "The agent's program cannot run; LADO holds the new worker",
 	"lado.alert.notificationTitle": "LADO alert · {{issue}}",
 	"lado.alert.notificationTitleNoIssue": "LADO alert",
+	"lado.notice.notificationTitle": "LADO · {{project}}",
 	"lado.card.alerts": "Unseen alerts: {{alerts}}",
 	"lado.card.costHint": "Estimated cost of the task's sessions at API prices",
 	"lado.watch.title": "Worker watch",
