@@ -150,6 +150,26 @@ func (c *commandContext) doJSONPathWithHeaders(
 	return c.doJSONPathWithHeadersAndTimeout(ctx, method, path, body, out, headers, commandTimeout)
 }
 
+// daemonURL 은 running.json 이 가리키는 살아 있는 daemon 의 path 주소다. run-file 이
+// 없거나 그 PID 가 죽었으면 daemonUnavailableError 를 준다.
+func (c *commandContext) daemonURL(path string) (string, error) {
+	cfg, err := config.Load()
+	if err != nil {
+		return "", err
+	}
+	info, err := runfile.Read(cfg.RunFilePath)
+	if err != nil {
+		return "", err
+	}
+	if info == nil {
+		return "", daemonUnavailableError{message: "AO daemon is not running — start it with `ao start`", cause: errDaemonNotRunning}
+	}
+	if !c.deps.ProcessAlive(info.PID) {
+		return "", daemonUnavailableError{message: fmt.Sprintf("AO daemon is not running (stale run-file at %s) — start it with `ao start`", cfg.RunFilePath), cause: errDaemonNotRunning}
+	}
+	return fmt.Sprintf("http://%s:%d%s", config.LoopbackHost, info.Port, path), nil
+}
+
 func (c *commandContext) doJSONPathWithHeadersAndTimeout(
 	ctx context.Context,
 	method, path string,
@@ -157,19 +177,9 @@ func (c *commandContext) doJSONPathWithHeadersAndTimeout(
 	headers map[string]string,
 	timeout time.Duration,
 ) error {
-	cfg, err := config.Load()
+	url, err := c.daemonURL(path)
 	if err != nil {
 		return err
-	}
-	info, err := runfile.Read(cfg.RunFilePath)
-	if err != nil {
-		return err
-	}
-	if info == nil {
-		return daemonUnavailableError{message: "AO daemon is not running — start it with `ao start`", cause: errDaemonNotRunning}
-	}
-	if !c.deps.ProcessAlive(info.PID) {
-		return daemonUnavailableError{message: fmt.Sprintf("AO daemon is not running (stale run-file at %s) — start it with `ao start`", cfg.RunFilePath), cause: errDaemonNotRunning}
 	}
 
 	var reader io.Reader = http.NoBody
@@ -180,7 +190,6 @@ func (c *commandContext) doJSONPathWithHeadersAndTimeout(
 		}
 		reader = bytes.NewReader(payload)
 	}
-	url := fmt.Sprintf("http://%s:%d%s", config.LoopbackHost, info.Port, path)
 	req, err := http.NewRequestWithContext(ctx, method, url, reader) // #nosec G704 -- daemon host is fixed loopback; path is an internal API route.
 	if err != nil {
 		return err

@@ -65,6 +65,7 @@ addresses change on restart.
 | `ao cue create/list`                | `POST/GET /api/v1/projects/{id}/cues`         |
 | `ao spawn`                          | Targeted launch ensure, then `POST /api/v1/sessions` |
 | `ao session ls`                     | `GET /api/v1/sessions` plus per-session PR summaries; shows branch, PR, CI, review, unresolved threads, activity, and age. |
+| `ao board`                          | `GET /api/v1/projects`, `GET /api/v1/sessions`, and `GET /api/v1/events` (SSE); read-only terminal kanban of projects and their live worker sessions. `--project <id>` opens one board, `--print` prints a plain-text snapshot. |
 | `ao session get <id>`               | `GET /api/v1/sessions/{id}`                    |
 | `ao session kill <id>`              | `POST /api/v1/sessions/{id}/kill`              |
 | `ao session restore <id>`           | `POST /api/v1/sessions/{id}/restore`           |

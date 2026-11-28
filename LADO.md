@@ -107,6 +107,8 @@ What the phone cannot do: approve an integration that carries production databas
 
 When the daemon starts with phone approval on, it checks again what turning it on checked and reopens the listener. When tailscale serve now points the port at something else, LADO does not overwrite it and leaves phone approval closed.
 
+**Terminal board** (`ao board`) shows the kanban where the app cannot open, such as an ssh terminal. The first screen lists each project with its Building, Validating, In review, and Ready session counts, the sessions waiting on a person (input needed, CI failed, changes requested, and similar states), the orchestrator status, and the last activity. Click a row or press Enter to open that project's kanban. Columns follow the daemon's `kanbanColumn`, as the app board does, and leave out orchestrators and archived sessions. Click a card or pick it with the arrow keys to see its session id, status, agent, and PR links below. The screen updates live from the daemon event stream and reloads every 5 seconds while that stream is down. Below 80 columns the lanes become tabs. It is read-only and never changes a session. `--project <id>` opens that kanban directly, and `--print` (or a non-terminal output) prints one plain-text snapshot and exits. The screen is in Korean when `LC_ALL` or `LANG` starts with `ko`.
+
 `AO_LADO_DEV_PRESENCE=1` lets approvals, and turning LADO mode off, through without the desktop app's confirmation, for the renderer running in a browser during development. `AO_LADO_DEV_SETUP_IGNORE_PROCESSES=1` lets a lab daemon that runs inside Claude Code or Codex adopt and restore anyway. Never set either on a daemon you use for real work.
 
 ## Where things live
