@@ -52,9 +52,19 @@ type LadoController struct {
 	// AccountLimits lists the account usage limits LADO holds new workers
 	// for and releases one by hand (issue #92).
 	AccountLimits LadoAccountLimitService
+	// Background lists the live sessions' background tasks (LADO fork,
+	// 2026-11-27).
+	Background LadoBackgroundService
 	// DBChanges ties the production database SQL of a PR to its
 	// integration approval (#97).
 	DBChanges LadoDBChangeService
+	// Phone is approving plans and integrations with a phone passkey: the
+	// desktop app's routes that turn it on and enroll passkeys. Nil answers
+	// 501 until the daemon wires it.
+	Phone LadoPhoneService
+	// Notices reads one orchestrator notice for its desktop notification.
+	// Nil answers 501.
+	Notices LadoNoticeService
 }
 
 const (
@@ -114,7 +124,10 @@ func (c *LadoController) Register(r chi.Router) {
 	c.registerRelay(r)
 	c.registerLogWatch(r)
 	c.registerAccountLimits(r)
+	c.registerBackground(r)
 	c.registerDBChanges(r)
+	c.registerPhone(r)
+	c.registerNotices(r)
 }
 
 func (c *LadoController) getProjectSettings(w http.ResponseWriter, r *http.Request) {

@@ -158,8 +158,14 @@ func stallWatched(role string) bool {
 // Once the worker moves again, the stall is over.
 func (s *Service) watchStall(ctx context.Context, w *worker, now time.Time) error {
 	st := w.watch.LadoWatchStall
-	stalled := w.watch.LimitState != domain.LadoLimitLimited && stallWatched(w.exec.Role) &&
-		w.resting() && !w.answering() && now.Sub(quietSince(*w)) >= w.settings.Stall()
+	watched := w.watch.LimitState != domain.LadoLimitLimited && stallWatched(w.exec.Role)
+	if watched && w.onBackground() {
+		// LADO fork (2026-11-27): it waits on its own work; Claude wakes it
+		// when the work ends. Only work running past the limit alerts.
+		s.watchBackgroundOverdue(ctx, *w, now)
+		watched = false
+	}
+	stalled := watched && w.resting() && !w.answering() && now.Sub(quietSince(*w)) >= w.settings.Stall()
 	if stalled {
 		// The PR facts are read only for a worker that otherwise stalls.
 		exec, ok, err := s.deps.Store.LadoExecution(ctx, w.exec.SessionID)
@@ -200,6 +206,21 @@ func (s *Service) watchStall(ctx context.Context, w *worker, now time.Time) erro
 		s.alert(ctx, *w, domain.LadoAlertStalled, st.Stalls, minutes, int64(w.settings.StallMinutes), now)
 	}
 	return nil
+}
+
+// watchBackgroundOverdue alerts once a session's background work has run
+// past the project's limit (three times its stall time), counted from the
+// oldest task's start, or from when AO heard of the tasks when none names one.
+func (s *Service) watchBackgroundOverdue(ctx context.Context, w worker, now time.Time) {
+	since := w.background.Since()
+	if since.IsZero() {
+		since = w.background.UpdatedAt
+	}
+	limit := w.settings.BackgroundOverdue()
+	if since.IsZero() || limit <= 0 || now.Sub(since) < limit {
+		return
+	}
+	s.alert(ctx, w, domain.LadoAlertBackgroundOverdue, 1, int64(now.Sub(since)/time.Minute), int64(limit/time.Minute), now)
 }
 
 // nudge sends the stall nudge message to a stalled worker. A message that

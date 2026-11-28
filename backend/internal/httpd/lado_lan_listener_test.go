@@ -43,3 +43,42 @@ func TestLANManagerBlocksLadoRoutes(t *testing.T) {
 		}
 	}
 }
+
+// TestLanBlocksPhoneRoutes keeps phone approval's desktop routes, which turn
+// it on and enroll passkeys, off the LAN listener: the phone reaches only
+// the tailscale serve socket, never the daemon's API.
+func TestLanBlocksPhoneRoutes(t *testing.T) {
+	inner := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, "ok")
+	})
+	st := &authState{}
+	st.setHash(mobilebridge.HashPassword("secret12"))
+	m := NewLANManager(inner, st, 0, slog.Default(), nil)
+	port, err := m.Start(0)
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	defer m.Stop(context.Background())
+
+	for _, c := range []struct{ method, path string }{
+		{http.MethodGet, "/api/v1/lado/phone/status"},
+		{http.MethodPost, "/api/v1/lado/phone/enable"},
+		{http.MethodPost, "/api/v1/lado/phone/disable"},
+		{http.MethodPost, "/api/v1/lado/phone/enroll-window"},
+		{http.MethodPost, "/api/v1/lado/phone/pairings/lookup"},
+		{http.MethodGet, "/api/v1/lado/phone/passkeys"},
+		{http.MethodPost, "/api/v1/lado/phone/passkeys"},
+		{http.MethodDelete, "/api/v1/lado/phone/passkeys/lpk_1"},
+	} {
+		req, _ := http.NewRequest(c.method, fmt.Sprintf("http://127.0.0.1:%d%s", port, c.path), nil)
+		req.Header.Set("Authorization", "Bearer secret12")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("%s %s: %v", c.method, c.path, err)
+		}
+		_ = resp.Body.Close()
+		if resp.StatusCode != http.StatusNotFound {
+			t.Fatalf("LAN %s %s = %d, want 404", c.method, c.path, resp.StatusCode)
+		}
+	}
+}

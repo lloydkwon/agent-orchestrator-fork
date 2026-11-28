@@ -75,6 +75,7 @@ export type LadoProjectUsage = components["schemas"]["LadoProjectUsageResponse"]
 export type LadoRelay = components["schemas"]["LadoRelayResponse"];
 export type LadoRelayState = LadoRelay["state"];
 export type LadoAlert = components["schemas"]["LadoAlertResponse"];
+export type LadoNotice = components["schemas"]["LadoNoticeResponse"];
 export type LadoUnseenAlertCounts = components["schemas"]["LadoUnseenAlertCountsResponse"];
 export type LadoAlertKind = LadoAlert["kind"];
 export type LadoWatchSettings = components["schemas"]["LadoWatchSettingsResponse"];
@@ -840,15 +841,12 @@ export async function fetchLadoDispatchSettings(): Promise<LadoDispatchSettings>
 	return data;
 }
 
-/** Replaces all three dispatch settings; it needs no confirmation. */
+/**
+ * Replaces the dispatch settings with every value it is given; the daemon
+ * keeps a value the input leaves out. It needs no confirmation.
+ */
 export async function updateLadoDispatchSettings(input: LadoDispatchSettingsInput): Promise<LadoDispatchSettings> {
-	const { data, error } = await apiClient.PUT("/api/v1/lado/dispatch-settings", {
-		body: {
-			maxConcurrent: input.maxConcurrent,
-			maxRunMinutes: input.maxRunMinutes,
-			holdOnMemoryTight: input.holdOnMemoryTight,
-		},
-	});
+	const { data, error } = await apiClient.PUT("/api/v1/lado/dispatch-settings", { body: input });
 	if (error) throw ladoError(error, "Could not save the run settings");
 	return data;
 }
@@ -905,6 +903,16 @@ export async function fetchLadoAlerts(projectId: string, filter: LadoAlertFilter
 	return data.alerts;
 }
 
+/** One orchestrator notice, for the desktop notification its change event names; null once it is gone. */
+export async function fetchLadoNotice(noticeId: number): Promise<LadoNotice | null> {
+	const { data, error, response } = await apiClient.GET("/api/v1/lado/notices/{noticeId}", {
+		params: { path: { noticeId: String(noticeId) } },
+	});
+	if (response.status === 404) return null;
+	if (error) throw ladoError(error, "Could not load the notice");
+	return data;
+}
+
 /** Marks an alert seen; an alert seen before keeps its first time. */
 export async function markLadoAlertSeen(alertId: number): Promise<LadoAlert> {
 	const { data, error } = await apiClient.POST("/api/v1/lado/alerts/{alertId}/seen", {
@@ -932,6 +940,7 @@ export async function updateLadoWatchSettings(projectId: string | undefined, val
 		sessionCompactions: values.sessionCompactions,
 		stallMinutes: values.stallMinutes,
 		wakeEnabled: values.wakeEnabled,
+		awaitMinutes: values.awaitMinutes,
 	};
 	const { data, error } = projectId
 		? await apiClient.PUT("/api/v1/lado/projects/{projectId}/watch-settings", { params: { path: { projectId } }, body })

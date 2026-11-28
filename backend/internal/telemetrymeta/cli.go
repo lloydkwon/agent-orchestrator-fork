@@ -89,6 +89,7 @@ var legacyActorlessUserCLICommands = map[string]struct{}{
 	"ao automation list":        {},
 	"ao automation runs":        {},
 	"ao automation update":      {},
+	"ao board":                  {}, // LADO fork: 터미널 칸반, 사람이 직접 본다
 	"ao browser":                {},
 	"ao browser act":            {},
 	"ao browser check":          {},

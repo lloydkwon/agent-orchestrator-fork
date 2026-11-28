@@ -60,9 +60,16 @@ describe("LADO usage text", () => {
 			"Worker quiet for over 120 min; LADO sent the nudge",
 		);
 		expect(ladoAlertText(t, ladoAlert({ kind: "stalled", value: 120 }), "en")).toBe("Worker quiet for over 120 min");
+		expect(ladoAlertText(t, ladoAlert({ kind: "restart_resumed" }), "en")).toBe(
+			"Started again after a restart; LADO told the worker to go on",
+		);
 		expect(ladoAlertText(t, ladoAlert({ kind: "agent_unavailable" }), "en")).toContain("LADO holds the new worker");
 		expect(ladoAlertText(t, ladoAlert({ kind: "conflict_unresolved", value: 2 }), "en")).toBe(
 			"Resolve workers failed 2 times in a row; resolve the conflict yourself",
+		);
+		// LADO fork (2026-11-27): background work past three times the stall time.
+		expect(ladoAlertText(t, ladoAlert({ kind: "background_overdue", value: 361 }), "en")).toBe(
+			"Background command still running after 361 min",
 		);
 		// A kind from a newer daemon reads as its own line.
 		expect(ladoAlertText(t, ladoAlert({ kind: "future" as LadoAlert["kind"] }), "en")).toBe(ladoAlert().line);

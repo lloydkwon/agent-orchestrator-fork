@@ -455,6 +455,8 @@ if (typeof window !== "undefined") {
 				changeClaudeChrome: async () => null,
 				changeDbChanges: async () => null,
 				applyDbChanges: async () => null,
+				enablePhoneApproval: async () => null,
+				enrollPhonePasskey: async () => null,
 			},
 		},
 	};

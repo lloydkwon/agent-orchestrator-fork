@@ -681,3 +681,58 @@ func TestNotificationStore_MarkNotificationsReadOnlyTouchesGivenIDs(t *testing.T
 		t.Fatalf("unread count = %d err=%v, want 1 (ntf_3 must stay reachable)", count, err)
 	}
 }
+
+// LADO fork (2026-11-27): the LADO watch raises a needs_input notification
+// for a worker idle after asking its owner (source key "lado-await:…").
+// Restart reconciliation keeps it while the worker is still idle — the watch
+// resolves it itself — and resolves it once the worker works or ended, like
+// any other needs_input row; a plain needs_input row of an idle session
+// still goes.
+func TestNotificationStore_ReconcileKeepsLadoAwaitOfAnIdleSession(t *testing.T) {
+	s := newTestStore(t)
+	seedProject(t, s, "mer")
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Second)
+	idle := sampleRecord("mer")
+	idle.Activity = domain.Activity{State: domain.ActivityIdle, LastActivityAt: now}
+	waiter, err := s.CreateSession(ctx, idle)
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	plain, err := s.CreateSession(ctx, idle)
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	seed := func(id string, sess domain.SessionID, sourceKey string) {
+		rec := domain.NotificationRecord{
+			ID: id, SessionID: sess, ProjectID: waiter.ProjectID, Type: domain.NotificationNeedsInput,
+			Title: id, Status: domain.NotificationUnread, CreatedAt: now, SourceKey: sourceKey,
+		}
+		if _, inserted, err := s.CreateNotification(ctx, rec); err != nil || !inserted {
+			t.Fatalf("CreateNotification %s inserted=%v err=%v", id, inserted, err)
+		}
+	}
+	seed("ntf_await", waiter.ID, "lado-await:"+string(waiter.ID)+":turn-1")
+	seed("ntf_plain", plain.ID, "")
+
+	resolved, err := s.ReconcileResolvedNotifications(ctx, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(resolved) != 1 || resolved[0].ID != "ntf_plain" {
+		t.Fatalf("resolved = %+v, want only the plain row", resolved)
+	}
+
+	working := waiter
+	working.Activity = domain.Activity{State: domain.ActivityActive, LastActivityAt: now.Add(time.Minute)}
+	if err := s.UpdateSession(ctx, working); err != nil {
+		t.Fatalf("update session: %v", err)
+	}
+	resolved, err = s.ReconcileResolvedNotifications(ctx, now.Add(time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(resolved) != 1 || resolved[0].ID != "ntf_await" {
+		t.Fatalf("resolved = %+v, want the await row once its worker works", resolved)
+	}
+}

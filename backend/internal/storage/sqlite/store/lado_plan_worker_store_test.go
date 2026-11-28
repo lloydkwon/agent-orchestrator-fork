@@ -440,3 +440,27 @@ func TestLadoPlanWorkerChangesPublishTaskChangeEvents(t *testing.T) {
 	}
 	expect("critic", 1)
 }
+
+// One notice reads by its id, with what the desktop notification shows; an
+// unknown id is not found.
+func TestLadoOrchestratorNoticeByID(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	n := domain.LadoOrchestratorNotice{ProjectID: "mer", Key: "revision:lado-task-1:2", Text: "LADO 알림: #42 계획 리비전 2 — 칸반에서 확인",
+		OccurredAt: ladoPlanAt, CreatedAt: ladoPlanAt.Add(time.Second)}
+	if added, err := s.AddLadoOrchestratorNotice(ctx, n); err != nil || !added {
+		t.Fatalf("add = %v, %v", added, err)
+	}
+	all, err := s.ListLadoOrchestratorNotices(ctx, "mer")
+	if err != nil || len(all) != 1 {
+		t.Fatalf("notices = %+v, %v", all, err)
+	}
+	got, ok, err := s.LadoOrchestratorNotice(ctx, all[0].ID)
+	if err != nil || !ok || got.ID != all[0].ID || got.ProjectID != "mer" || got.Key != n.Key || got.Text != n.Text ||
+		!got.OccurredAt.Equal(n.OccurredAt) || !got.CreatedAt.Equal(n.CreatedAt) {
+		t.Fatalf("notice = %+v, %v, %v", got, ok, err)
+	}
+	if _, ok, err := s.LadoOrchestratorNotice(ctx, all[0].ID+1); err != nil || ok {
+		t.Fatalf("unknown notice = %v, %v; want not found", ok, err)
+	}
+}

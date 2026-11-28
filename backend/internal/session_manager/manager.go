@@ -484,6 +484,9 @@ type Manager struct {
 	// lado_launch_env.go.
 	ladoLaunchValues LadoLaunchValues
 	ladoReadDirs     LadoReadDirectories
+	// LADO fork: sessions a reboot stopped start again, see
+	// lado_startup_restore.go.
+	ladoStartupRestore *ladoStartupRestoreState
 	// lookPath is exec.LookPath in production; tests substitute a stub so
 	// they don't need real binaries on PATH. Returns ports.ErrAgentBinaryNotFound
 	// when the binary is missing so the sentinel propagates through toAPIError.
@@ -2626,6 +2629,7 @@ func (m *Manager) kill(ctx context.Context, id domain.SessionID, backgroundClean
 	if !ok {
 		return KillResult{}, nil // already gone: benign race
 	}
+	m.markEndingByHand(id)
 	m.stopPreviewBestEffort(ctx, id)
 	m.destroyBrowserBestEffort(ctx, id)
 	handle := runtimeHandle(rec.Metadata)
@@ -2771,6 +2775,35 @@ func (m *Manager) kill(ctx context.Context, id domain.SessionID, backgroundClean
 	return KillResult{Freed: freed}, nil
 }
 
+// runtimeDeathRecorder is the lifecycle manager's memory of the sessions it
+// ended because their runtime died. Optional so focused fakes need not know it.
+type runtimeDeathRecorder interface {
+	TerminatedByRuntimeDeath(id domain.SessionID) bool
+}
+
+// handEndRecorder is the lifecycle manager's memory of the sessions someone
+// began to end. Optional so focused fakes need not know it.
+type handEndRecorder interface {
+	MarkEndingByHand(id domain.SessionID)
+}
+
+// markEndingByHand tells the lifecycle manager, before the runtime is
+// destroyed, that this end is by hand: a kill or a replacement that fails
+// partway must not leave the session looking like its runtime crashed.
+func (m *Manager) markEndingByHand(id domain.SessionID) {
+	if recorder, ok := m.lcm.(handEndRecorder); ok {
+		recorder.MarkEndingByHand(id)
+	}
+}
+
+// TerminatedByRuntimeDeath reports whether the session ended because its
+// runtime died (a reboot, a crash) rather than because someone ended it, as far
+// as this daemon saw.
+func (m *Manager) TerminatedByRuntimeDeath(id domain.SessionID) bool {
+	recorder, ok := m.lcm.(runtimeDeathRecorder)
+	return ok && recorder.TerminatedByRuntimeDeath(id)
+}
+
 // RetireForReplacement terminates a live orchestrator and releases its branch
 // for a replacement session. Unlike Kill, this captures uncommitted work before
 // force-removing the worktree, so a dirty canonical orchestrator worktree does
@@ -2794,6 +2827,7 @@ func (m *Manager) RetireForReplacement(ctx context.Context, id domain.SessionID)
 	if !ok || rec.IsTerminated {
 		return nil
 	}
+	m.markEndingByHand(id)
 	m.stopPreviewBestEffort(ctx, id)
 	m.destroyBrowserBestEffort(ctx, id)
 	if rec.Metadata.WorkspacePath == "" || rec.Metadata.Branch == "" {

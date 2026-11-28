@@ -390,6 +390,8 @@ export const aoBridge: AoBridge =
 				changeClaudeChrome: async () => null,
 				changeDbChanges: async () => null,
 				applyDbChanges: async () => null,
+				enablePhoneApproval: async () => null,
+				enrollPhonePasskey: async () => null,
 			},
 		},
 	} satisfies AoBridge);

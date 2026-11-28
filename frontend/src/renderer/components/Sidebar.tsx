@@ -74,7 +74,10 @@ import {
 	STANDALONE_PROJECT_KIND,
 	STANDALONE_WORKSPACE_ID,
 } from "../types/workspace";
-import { getSessionStatusDotView } from "../lib/session-presentation";
+import { getSessionStatusGlyphView } from "../lib/session-presentation";
+import { useSessionAwaitingOwner } from "../hooks/useAwaitingOwner";
+import { useSessionBackground } from "../hooks/useSessionBackground";
+import { backgroundSummary } from "../lib/lado-background";
 import { deriveSessionAgentSwitchPresentation } from "../lib/agent-switch-presentation";
 import { aoBridge } from "../lib/bridge";
 import { hasTrustedApiBaseUrl } from "../lib/api-client";
@@ -568,24 +571,42 @@ function useSelection() {
 	}), [goArtifacts, goAutomations, goConnectMobile, goGlobalSettings, goHome, goProject, goSession, goSettings, goStandaloneBoard, params.hostId, params.projectId, params.sessionId, pathname]);
 }
 
-// Colour tracks the session's board section, preserving SCM state while the
-// agent runs; motion stays on raw agent activity. A no-PR idle session turns
-// blue when it starts working. See getSessionStatusDotView for the lane mapping.
+// LADO fork: 상태 칸 하나에 상태 하나 — mux 처럼 ⏳ 작업 중, ❗ 사람 기다림, ✅ 끝난 턴이 점 자리를
+// 차지한다(판정은 getSessionStatusGlyphView 한 곳). 칸 폭은 w-5(20px)로 고정해서 — 예전 점의 px-1.5 + size-2 와
+// 같은 폭이다 — 이모지와 점이 바뀌어도 제목과 «더 보기» 줄의 들여쓰기가 움직이지 않는다.
+// 열린 needs_input 알림이 있는 세션도 ❗ 를 그린다 — LADO 워커가 질문으로 턴을 끝내면 activity 는 idle 이지만
+// LADO 감시가 그 알림을 올린다(2026-11-27, useSessionAwaitingOwner).
+// 💻 는 에이전트가 남겨 둔 백그라운드 작업(셸·Monitor·하위 에이전트)이 도는 idle 세션이다(2026-11-27). 마우스를
+// 올리면 첫 작업의 설명·시작 시각이 보인다.
 function SessionStatusDot({ session }: { session: WorkspaceSession }) {
-	const dot = getSessionStatusDotView(session);
+	const { t, i18n } = useTranslation();
+	const awaitingOwner = useSessionAwaitingOwner(session);
+	const background = useSessionBackground(session);
+	const view = getSessionStatusGlyphView(session, undefined, { awaitingOwner, backgroundTasks: background?.tasks.length });
+	const title = view.glyph === "background" && background
+		? t("session.backgroundWork", { summary: backgroundSummary(background, i18n.language) })
+		: undefined;
 	return (
 		<span
 			aria-hidden="true"
-			className="relative z-[1] inline-flex shrink-0 items-center justify-center px-1.5"
+			className="relative z-[1] inline-flex w-5 shrink-0 items-center justify-center"
 		>
-			<span
-				className={cn(
-					"size-2 rounded-full",
-					dot.className,
-					dot.breathe && "animate-status-pulse",
-				)}
-				data-session-status={session.status}
-			/>
+			{view.glyph === "dot" ? (
+				<span
+					className={cn("size-2 rounded-full", view.dotClassName)}
+					data-session-status={session.status}
+					data-status-glyph="dot"
+				/>
+			) : (
+				<span
+					className="text-xs leading-none"
+					data-session-status={session.status}
+					data-status-glyph={view.glyph}
+					title={title}
+				>
+					{view.symbol}
+				</span>
+			)}
 		</span>
 	);
 }
@@ -2642,12 +2663,18 @@ const SessionRow = memo(function SessionRow({
 
 const SessionMessageAge = memo(function SessionMessageAge({ session }: { session: WorkspaceSession }) {
 	const { t } = useTranslation();
+	// 훅은 아래 이른 반환보다 먼저 부른다. ❗ 행(사람 대기 포함)의 시간도 빨갛게 칠한다.
+	const awaitingOwner = useSessionAwaitingOwner(session);
+	const background = useSessionBackground(session);
 	const at = session.lastInteractionAt ?? session.lastUserMessageAt;
 	if (!at) return null;
+	// LADO fork: mux 목록처럼 작업 중·기다림 행의 시간은 상태 색을 입는다(getSessionStatusGlyphView).
+	// cn(tailwind-merge)으로 합치지 않는다 — 사용자 정의 크기 text-micro 를 글자색으로 보고 색 클래스와 함께 지운다.
+	const ageClassName = getSessionStatusGlyphView(session, undefined, { awaitingOwner, backgroundTasks: background?.tasks.length }).ageClassName || "text-passive";
 
 	return (
 		<time
-			className="absolute inset-y-0 right-2 z-[1] flex min-w-0 shrink-0 items-center whitespace-nowrap font-sans text-micro tabular-nums text-passive opacity-100 group-has-[:focus-visible]/session-row:opacity-0"
+			className={`absolute inset-y-0 right-2 z-[1] flex min-w-0 shrink-0 items-center whitespace-nowrap font-sans text-micro tabular-nums opacity-100 group-has-[:focus-visible]/session-row:opacity-0 ${ageClassName}`}
 			data-session-message-age=""
 			dateTime={at}
 			title={t("shell.lastMessageAt", { time: formatTimeCompact(at) })}

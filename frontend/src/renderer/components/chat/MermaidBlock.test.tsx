@@ -87,8 +87,8 @@ describe("MermaidBlock", () => {
 		delete document.documentElement.dataset.theme;
 	});
 
+	// LADO fork (TDD §11): 내장 패널은 수정키 클릭으로 연다.
 	it("routes a diagram link click to the chat handler instead of navigating", async () => {
-		const user = userEvent.setup();
 		const onLinkOpen = vi.fn();
 		renderDiagram.mockResolvedValue(
 			'<svg xmlns="http://www.w3.org/2000/svg"><a href="https://example.com/i/1"><text>docs</text></a></svg>',
@@ -96,8 +96,24 @@ describe("MermaidBlock", () => {
 		render(<MermaidBlock code={CODE} onLinkOpen={onLinkOpen} />);
 
 		// Without interception jsdom would attempt a real navigation here.
-		await user.click(await screen.findByText("docs"));
+		fireEvent.click(await screen.findByText("docs"), { altKey: true });
 		expect(onLinkOpen).toHaveBeenCalledWith("https://example.com/i/1");
+	});
+
+	// LADO fork (TDD §11): 그냥 클릭은 채팅 처리기가 있어도 시스템 브라우저로 연다.
+	it("opens a plainly clicked diagram link in the system browser", async () => {
+		const user = userEvent.setup();
+		const onLinkOpen = vi.fn();
+		const openExternal = vi.spyOn(aoBridge.app, "openExternal").mockResolvedValue(undefined);
+		renderDiagram.mockResolvedValue(
+			'<svg xmlns="http://www.w3.org/2000/svg"><a href="https://example.com/i/1"><text>docs</text></a></svg>',
+		);
+		render(<MermaidBlock code={CODE} onLinkOpen={onLinkOpen} />);
+
+		await user.click(await screen.findByText("docs"));
+		expect(openExternal).toHaveBeenCalledWith("https://example.com/i/1");
+		expect(onLinkOpen).not.toHaveBeenCalled();
+		openExternal.mockRestore();
 	});
 
 	it("opens diagram links in the system browser without a chat handler", async () => {
@@ -122,8 +138,12 @@ describe("MermaidBlock", () => {
 
 		// Middle-click fires auxclick, not click: without interception it
 		// would skip the chat link policy for the window-open guard.
+		// LADO fork (TDD §11): 수정키 없는 가운데 클릭은 그냥 클릭처럼 시스템 브라우저로 연다.
+		const openExternal = vi.spyOn(aoBridge.app, "openExternal").mockResolvedValue(undefined);
 		fireEvent(await screen.findByText("docs"), new MouseEvent("auxclick", { bubbles: true, button: 1 }));
-		expect(onLinkOpen).toHaveBeenCalledWith("https://example.com/i/1");
+		expect(openExternal).toHaveBeenCalledWith("https://example.com/i/1");
+		expect(onLinkOpen).not.toHaveBeenCalled();
+		openExternal.mockRestore();
 	});
 
 	it("ignores non-middle aux clicks on diagram links", async () => {

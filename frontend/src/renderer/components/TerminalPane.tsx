@@ -1384,6 +1384,7 @@ function AttachedTerminal({
 					onError={handleInitError}
 					onLinkOpen={handleLinkOpen}
 					onSessionLinkOpen={handleSessionLinkOpen}
+					ladoRemoteHost={Boolean(session?.hostId)}
 					onReady={handleReady}
 					onVisibleContent={() => setHasVisibleContent(true)}
 					onToggleFullscreen={onToggleFullscreen}

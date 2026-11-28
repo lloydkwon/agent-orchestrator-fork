@@ -41,6 +41,29 @@ func (q *Queries) GetLadoNoticeSince(ctx context.Context) (time.Time, error) {
 	return since, err
 }
 
+const getLadoOrchestratorNotice = `-- name: GetLadoOrchestratorNotice :one
+SELECT id, project_id, notice_key, text, occurred_at, created_at, sent_at, sent_to, dropped_at
+FROM lado_orchestrator_notices
+WHERE id = ?
+`
+
+func (q *Queries) GetLadoOrchestratorNotice(ctx context.Context, id int64) (LadoOrchestratorNotice, error) {
+	row := q.db.QueryRowContext(ctx, getLadoOrchestratorNotice, id)
+	var i LadoOrchestratorNotice
+	err := row.Scan(
+		&i.ID,
+		&i.ProjectID,
+		&i.NoticeKey,
+		&i.Text,
+		&i.OccurredAt,
+		&i.CreatedAt,
+		&i.SentAt,
+		&i.SentTo,
+		&i.DroppedAt,
+	)
+	return i, err
+}
+
 const insertLadoOrchestratorNotice = `-- name: InsertLadoOrchestratorNotice :execrows
 INSERT INTO lado_orchestrator_notices (project_id, notice_key, text, occurred_at, created_at)
 VALUES (?, ?, ?, ?, ?)

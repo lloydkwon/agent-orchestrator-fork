@@ -161,7 +161,7 @@ describe("runs and dispatch settings", () => {
 		expect((error as LadoApiError).code).toBe("LADO_EXECUTION_LOAD_FAILED");
 	});
 
-	it("reads the dispatch settings and saves all three together", async () => {
+	it("reads the dispatch settings and saves every value it is given", async () => {
 		const settings = { maxConcurrent: 2, maxRunMinutes: 480, holdOnMemoryTight: true };
 		get.mockResolvedValue({ data: settings, error: undefined });
 		await expect(fetchLadoDispatchSettings()).resolves.toEqual(settings);
@@ -173,6 +173,23 @@ describe("runs and dispatch settings", () => {
 		expect(put).toHaveBeenCalledWith("/api/v1/lado/dispatch-settings", {
 			body: { maxConcurrent: 2, maxRunMinutes: 0, holdOnMemoryTight: true },
 		});
+
+		// The worker cap, the disk threshold, the plan worker settings and the
+		// restore switch reach the daemon too: Settings → Runs sends them all.
+		const all = {
+			maxConcurrent: 5,
+			maxRunMinutes: 1440 as const,
+			holdOnMemoryTight: true,
+			maxPlanWorkers: 4,
+			planReview: { skip: true, maxPaths: 3, patterns: { auth: ["**/auth/**"] } },
+			maxWorkers: 12,
+			holdOnDiskLow: false,
+			minFreeDiskGb: 20,
+			restoreOnStart: false,
+		};
+		put.mockResolvedValue({ data: all, error: undefined });
+		await expect(updateLadoDispatchSettings(all)).resolves.toEqual(all);
+		expect(put).toHaveBeenLastCalledWith("/api/v1/lado/dispatch-settings", { body: all });
 	});
 
 	it("keeps the daemon's code when the settings are refused", async () => {

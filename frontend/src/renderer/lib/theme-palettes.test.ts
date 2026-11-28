@@ -9,7 +9,7 @@ const cases = THEMES.filter((theme) => theme.id !== "orchestrate").flatMap((them
 	(["dark", "light"] as const).map((mode) => ({ id: theme.id, mode, palette: theme[mode] as ThemePalette })),
 );
 
-function ratios(palette: ThemePalette, roles: readonly (keyof ThemePalette)[], surface: string) {
+function ratios(palette: ThemePalette, roles: readonly Exclude<keyof ThemePalette, "terminal">[], surface: string) {
 	return Object.fromEntries(roles.map((role) => [role, Number(contrastRatio(palette[role]!, surface).toFixed(2))]));
 }
 

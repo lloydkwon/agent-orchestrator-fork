@@ -22,7 +22,9 @@ import {
 	type LadoTask,
 } from "./lado";
 import type { LadoAlertEvent } from "./lado-alert-notifications";
+import type { LadoNoticeEvent } from "./lado-notice-notifications";
 import { ladoDBChangeExecutionQueryKey, ladoDBChangeProjectQueryKey } from "./lado-db-changes";
+import { ladoBackgroundQueryKey } from "./lado-background";
 import { ladoLogWatchProjectQueryKey } from "./lado-log-watch";
 import { ladoSetupQueryRoot } from "./lado-setup";
 
@@ -35,6 +37,7 @@ type LadoEventPayload =
 			isTerminated?: unknown;
 			fromSession?: unknown;
 			alertId?: unknown;
+			noticeId?: unknown;
 			op?: unknown;
 	  }
 	| undefined;
@@ -74,6 +77,8 @@ function shownRunEnds(queryClient: Pick<QueryClient, "getQueryData">, projectId:
 export type LadoEventBatchOptions = {
 	/** The alerts raised since the last flush, from their INSERT events; a replay can name one again. */
 	onNewAlerts?: (alerts: LadoAlertEvent[]) => void;
+	/** The orchestrator notices queued since the last flush, from their INSERT events; a replay can name one again. */
+	onNewNotices?: (notices: LadoNoticeEvent[]) => void;
 };
 
 /**
@@ -109,8 +114,17 @@ export function createLadoEventBatch(queryClient: Pick<QueryClient, "getQueryDat
 	// or applications changed, and the runs whose SQL files moved.
 	const dbChangeProjects = new Set<string>();
 	const dbChangeSessions = new Set<string>();
+	// A session's background tasks changed (LADO fork, 2026-11-27): the sidebar's 💻.
+	let backgroundChanged = false;
+	// Orchestrator notices queued, for their desktop notifications; they
+	// refresh no view.
+	const newNotices = new Map<number, LadoNoticeEvent>();
 	return {
 		note(payload: LadoEventPayload, event?: LadoEventEnvelope): boolean {
+			if (payload?.kind === "lado_background") {
+				backgroundChanged = true;
+				return true;
+			}
 			// A session's limit, stall or compactions changed, or an alert was
 			// raised or seen: the board's costs and badges and the task's usage.
 			if ((payload?.kind === "lado_watch" || payload?.kind === "lado_alert") && typeof payload.projectId === "string" && payload.projectId) {
@@ -123,6 +137,13 @@ export function createLadoEventBatch(queryClient: Pick<QueryClient, "getQueryDat
 					if (payload.op === "insert" && typeof payload.alertId === "number" && taskId) {
 						newAlerts.set(payload.alertId, { alertId: payload.alertId, projectId, taskId });
 					}
+				}
+				return true;
+			}
+			// An orchestrator notice was queued: its desktop notification.
+			if (payload?.kind === "lado_notice" && typeof payload.projectId === "string" && payload.projectId) {
+				if (payload.op === "insert" && typeof payload.noticeId === "number") {
+					newNotices.set(payload.noticeId, { noticeId: payload.noticeId, projectId: payload.projectId });
 				}
 				return true;
 			}
@@ -186,6 +207,10 @@ export function createLadoEventBatch(queryClient: Pick<QueryClient, "getQueryDat
 			return false;
 		},
 		flush(invalidate: (queryKey: QueryKey) => void): void {
+			if (backgroundChanged) {
+				invalidate(ladoBackgroundQueryKey);
+				backgroundChanged = false;
+			}
 			// A rule change can send approved tasks back to review: refresh the
 			// rules, what applies in each project reached, its lanes, and the
 			// open task view, whose key does not name its project.
@@ -248,6 +273,11 @@ export function createLadoEventBatch(queryClient: Pick<QueryClient, "getQueryDat
 				const raised = [...newAlerts.values()];
 				newAlerts.clear();
 				options.onNewAlerts?.(raised);
+			}
+			if (newNotices.size > 0) {
+				const queued = [...newNotices.values()];
+				newNotices.clear();
+				options.onNewNotices?.(queued);
 			}
 		},
 	};

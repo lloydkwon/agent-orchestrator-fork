@@ -1271,6 +1271,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/lado/background-tasks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List the background tasks (shells, Monitors, subagents) of the live sessions AO knows them of; a session idle on them waits on its own work */
+        get: operations["listLadoSessionBackground"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/lado/bindings": {
         parameters: {
             query?: never;
@@ -1556,6 +1573,143 @@ export interface paths {
         get?: never;
         /** Write a knowledge note for a running session of a LADO mode project into that session's project; an update sends the revision it read as baseRevision */
         put: operations["writeLadoKnowledgeNote"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/lado/notices/{noticeId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get one orchestrator notice, for the desktop notification its change event names */
+        get: operations["getLadoNotice"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/lado/phone/disable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Turn phone approval off; needs no human-presence proof. Clears tailscale serve only while it points at the socket */
+        post: operations["disableLadoPhone"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/lado/phone/enable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Turn phone approval on with a human-presence proof (phone_approval.on, subject phone-approval): opens the socket and points tailscale serve at it; refused off Linux, when tailscaled runs as the daemon's user, or when the port serves something else or has funnel on */
+        post: operations["enableLadoPhone"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/lado/phone/enroll-window": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Open a ten-minute phone passkey enrollment, discarding one already open; enrolls nothing by itself */
+        post: operations["openLadoPhoneEnrollWindow"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/lado/phone/pairings/lookup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Look up the passkey a phone made by the code only the phone shows; five wrong codes close the enrollment */
+        post: operations["lookupLadoPhonePairing"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/lado/phone/passkeys": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List the enrolled phone passkeys, revoked ones too */
+        get: operations["listLadoPhonePasskeys"];
+        put?: never;
+        /** Enroll the passkey a phone made with a human-presence proof (phone_passkey.enroll, subject the credential's sha256); the pairing is used up whatever the outcome */
+        post: operations["enrollLadoPhonePasskey"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/lado/phone/passkeys/{passkeyId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Revoke a phone passkey; needs no human-presence proof. Its row stays, so the credential cannot be enrolled again */
+        delete: operations["revokeLadoPhonePasskey"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/lado/phone/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get phone approval's state: whether it is on, what turning it on fixed, whether its socket listens and the open enrollment */
+        get: operations["getLadoPhoneStatus"];
+        put?: never;
         post?: never;
         delete?: never;
         options?: never;
@@ -6973,8 +7127,14 @@ export interface components {
             retainedContent?: null | number[];
             text: string;
         };
+        /** @description The empty object {}; the presence proof signs exactly these bytes. */
+        EnableLadoPhoneRequest: Record<string, never>;
         EndpointsResponse: {
             endpoints: components["schemas"]["MobileEndpoint"][];
+        };
+        EnrollLadoPhonePasskeyRequest: {
+            code: string;
+            credentialSha256: string;
         };
         EnsureAgentReadinessRequest: {
             agentIds?: string[];
@@ -7256,7 +7416,7 @@ export interface components {
             id: number;
             issueRef: string;
             /** @enum {string} */
-            kind: "task_cost" | "session_cost" | "session_compactions" | "limited" | "limit_resumed" | "stall_nudged" | "stalled" | "agent_unavailable" | "conflict_unresolved";
+            kind: "task_cost" | "session_cost" | "session_compactions" | "limited" | "limit_resumed" | "stall_nudged" | "stalled" | "agent_unavailable" | "conflict_unresolved" | "background_overdue" | "restart_resumed";
             /** @description 1 past a cost threshold, 2 past twice it; the resume's number for limit_resumed, the stop's for limited and the stall's for stalled; otherwise 1. */
             level: number;
             /** @description The alert's one line, as the orchestrator gets it. */
@@ -7312,6 +7472,20 @@ export interface components {
             setupRemoved: string[];
             /** @description Hash of the rule snapshot fixed in the approval. */
             snapshotSha256: string;
+        };
+        LadoBackgroundListResponse: {
+            sessions: components["schemas"]["LadoSessionBackgroundResponse"][];
+        };
+        LadoBackgroundTaskResponse: {
+            /** @description The command's first line or the task's description, at most 80 characters. */
+            description: string;
+            /**
+             * Format: date-time
+             * @description When the task started; omitted when unknown.
+             */
+            startedAt?: null | string;
+            /** @description shell, subagent, monitor or workflow, as the agent names it. */
+            type: string;
         };
         LadoBranchProtectionResponse: {
             /** @description The base branch workers start from; empty when LADO could not tell it. */
@@ -7556,6 +7730,8 @@ export interface components {
             minFreeDiskGb: number;
             /** @description When LADO skips the review of a plan worker's draft. */
             planReview: components["schemas"]["LadoPlanReviewSettings"];
+            /** @description At the daemon's start, start again the agent of each session a reboot stopped, in its own worktree and conversation, and tell a LADO worker whose turn was cut off to go on. Off leaves them stopped until a person restores them. */
+            restoreOnStart: boolean;
             /**
              * Format: date-time
              * @description When the settings last changed; omitted while the defaults apply.
@@ -8175,6 +8351,19 @@ export interface components {
              */
             updatedAt?: null | string;
         };
+        LadoNoticeResponse: {
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: int64 */
+            id: number;
+            /** @description What the notice tells of, as kind:subject; the kind before the first colon sorts it (revision, integration, failed, started, ...). */
+            key: string;
+            /** Format: date-time */
+            occurredAt: string;
+            projectId: string;
+            /** @description The line, starting with "LADO 알림: "; it never carries plan text. */
+            text: string;
+        };
         LadoPartRunRepoResponse: {
             /** @description The repository's base branch the dispatch resolved. */
             baseBranch?: string;
@@ -8197,6 +8386,55 @@ export interface components {
              * @enum {string}
              */
             status: "ok" | "missing" | "unverified";
+        };
+        LadoPhonePairingResponse: {
+            /** Format: date-time */
+            createdAt: string;
+            /** @description The credential id's sha256 in hex, the subject of the enrollment's presence proof. */
+            credentialSha256: string;
+            deviceHint: string;
+            /** @description The first eight hex characters of the credential id's sha256. */
+            fingerprint: string;
+            login: string;
+        };
+        LadoPhonePasskeyListResponse: {
+            passkeys: components["schemas"]["LadoPhonePasskeyResponse"][];
+        };
+        LadoPhonePasskeyResponse: {
+            /** @description The passkey's sign count once went back; it is refused from then on. */
+            cloneWarning: boolean;
+            /** Format: date-time */
+            createdAt: string;
+            deviceHint: string;
+            fingerprint: string;
+            id: string;
+            /** Format: date-time */
+            lastUsedAt?: null | string;
+            login: string;
+            revoked: boolean;
+            /** Format: date-time */
+            revokedAt?: null | string;
+            rpId: string;
+        };
+        LadoPhoneRevokeResponse: {
+            revoked: boolean;
+        };
+        LadoPhoneStatusResponse: {
+            enabled: boolean;
+            enrollUrl?: string;
+            /** Format: date-time */
+            enrollWindowExpiresAt?: null | string;
+            listening: boolean;
+            /** @description https://<MagicDNS name>:<serve port>, the phone pages' origin. */
+            origin: string;
+            /** @description The tailnet login that turned phone approval on; only its requests pass. */
+            ownerLogin: string;
+            pairingPending: boolean;
+            /** @description WebAuthn relying party id: the machine's MagicDNS name. */
+            rpId: string;
+            /** @description The tailnet HTTPS port phone approval serves on: the one turning it on fixed while it is on, otherwise the one turning it on would use (default 8444). */
+            servePort: number;
+            supported: boolean;
         };
         LadoPlanApprovalResponse: {
             /** Format: date-time */
@@ -8768,6 +9006,17 @@ export interface components {
             problemCode?: "key_home_unknown" | "key_path_relative" | "key_missing" | "key_not_a_file" | "host_key_untrusted" | "key_refused" | "ssh_failed";
             /** @description What git or ssh printed, when there is one to show. */
             problemDetail?: string;
+        };
+        LadoSessionBackgroundResponse: {
+            sessionId: string;
+            /**
+             * @description bridge: the agent bridge's own report; transcript: read from the conversation file and the process table.
+             * @enum {string}
+             */
+            source: "bridge" | "transcript";
+            tasks: components["schemas"]["LadoBackgroundTaskResponse"][];
+            /** Format: date-time */
+            updatedAt: string;
         };
         LadoSessionClaudeChromeResponse: {
             /** @enum {string} */
@@ -9862,6 +10111,7 @@ export interface components {
             text: string;
         };
         LadoWatchSettingsResolved: {
+            awaitMinutes: number;
             compactWindow: number;
             sessionCompactions: number;
             /** Format: int64 */
@@ -9889,6 +10139,8 @@ export interface components {
             values: components["schemas"]["LadoWatchSettingsValues"];
         };
         LadoWatchSettingsValues: {
+            /** @description How long a running worker may rest after its turn, without a report, before LADO tells the owner it waits on them with a needs_input notification. 0 tells only of a needs-input report. */
+            awaitMinutes: null | number;
             /** @description The token count Claude Code sessions of a project in LADO mode compact at (CLAUDE_CODE_AUTO_COMPACT_WINDOW), and Codex sessions' compact limit. */
             compactWindow: null | number;
             /** @description How many times one session may compact before LADO alerts. */
@@ -10023,6 +10275,10 @@ export interface components {
             path: string;
             sessionId: string;
             truncated: boolean;
+        };
+        LookupLadoPhonePairingRequest: {
+            /** @description The eight digits the phone shows; spaces and dashes do not matter. */
+            code: string;
         };
         MarkAllNotificationsReadRequest: {
             /** @description Acknowledge exactly these notifications. Omit to acknowledge every unread notification; paginating clients should send the ids they actually rendered so later pages stay unread. */
@@ -11520,6 +11776,7 @@ export interface components {
             maxWorkers?: null | number;
             minFreeDiskGb?: null | number;
             planReview?: components["schemas"]["LadoPlanReviewSettings"];
+            restoreOnStart?: null | boolean;
         };
         UpdateLadoLogSourceRequest: {
             displayName: string;
@@ -11611,6 +11868,8 @@ export interface components {
             model?: null | string;
         };
         UpdateLadoWatchSettingsRequest: {
+            /** @description How long a running worker may rest after its turn, without a report, before LADO tells the owner it waits on them with a needs_input notification. 0 tells only of a needs-input report. */
+            awaitMinutes: null | number;
             /** @description The token count Claude Code sessions of a project in LADO mode compact at (CLAUDE_CODE_AUTO_COMPACT_WINDOW), and Codex sessions' compact limit. */
             compactWindow: null | number;
             /** @description How many times one session may compact before LADO alerts. */
@@ -15993,6 +16252,44 @@ export interface operations {
             };
         };
     };
+    listLadoSessionBackground: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LadoBackgroundListResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Not Implemented */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+        };
+    };
     setLadoBinding: {
         parameters: {
             query?: never;
@@ -17164,6 +17461,507 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Not Implemented */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+        };
+    };
+    getLadoNotice: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description LADO orchestrator notice id. */
+                noticeId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LadoNoticeResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Not Implemented */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+        };
+    };
+    disableLadoPhone: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LadoPhoneStatusResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Not Implemented */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+        };
+    };
+    enableLadoPhone: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Human-presence proof v1.<nonce>.<expires>.<mac>, signed by the AO desktop app over the method, path and body. */
+                "X-LADO-Presence"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EnableLadoPhoneRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LadoPhoneStatusResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Not Implemented */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+        };
+    };
+    openLadoPhoneEnrollWindow: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LadoPhoneStatusResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Not Implemented */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+        };
+    };
+    lookupLadoPhonePairing: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LookupLadoPhonePairingRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LadoPhonePairingResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Not Implemented */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+        };
+    };
+    listLadoPhonePasskeys: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LadoPhonePasskeyListResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Not Implemented */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+        };
+    };
+    enrollLadoPhonePasskey: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Human-presence proof v1.<nonce>.<expires>.<mac>, signed by the AO desktop app over the method, path and body. */
+                "X-LADO-Presence"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EnrollLadoPhonePasskeyRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LadoPhonePasskeyResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Not Implemented */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+        };
+    };
+    revokeLadoPhonePasskey: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description LADO phone passkey id. */
+                passkeyId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LadoPhoneRevokeResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Not Implemented */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+        };
+    };
+    getLadoPhoneStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LadoPhoneStatusResponse"];
                 };
             };
             /** @description Internal Server Error */

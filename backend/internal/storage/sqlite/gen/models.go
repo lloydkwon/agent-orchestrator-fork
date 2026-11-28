@@ -550,6 +550,7 @@ type LadoDispatchSetting struct {
 	MaxWorkers             int64
 	HoldOnDiskLow          int64
 	MinFreeDiskGb          int64
+	RestoreOnStart         int64
 }
 
 type LadoEvidenceLink struct {
@@ -795,6 +796,35 @@ type LadoPartRunRepo struct {
 	BaseCommitsAhead     sql.NullInt64
 }
 
+type LadoPhonePasskey struct {
+	ID               string
+	CredentialID     []byte
+	CredentialJson   string
+	RpID             string
+	DeviceHint       string
+	Login            string
+	Fingerprint      string
+	SignCount        int64
+	CloneWarning     int64
+	CreatedAt        time.Time
+	LastUsedAt       sql.NullTime
+	RevokedAt        sql.NullTime
+	EnrollProofNonce string
+}
+
+type LadoPhoneSetting struct {
+	ID               int64
+	Enabled          int64
+	RpID             string
+	Origin           string
+	OwnerLogin       string
+	UserHandle       []byte
+	ServePort        int64
+	SocketPath       string
+	EnableProofNonce sql.NullString
+	UpdatedAt        time.Time
+}
+
 type LadoPlanApproval struct {
 	ID         string
 	RevisionID string
@@ -906,6 +936,7 @@ type LadoPresenceProof struct {
 	Dev       int64
 	ExpiresAt time.Time
 	UsedAt    time.Time
+	Via       string
 }
 
 type LadoProjectSetting struct {
@@ -1003,6 +1034,13 @@ type LadoRuleVersion struct {
 	Sha256          string
 	Actor           string
 	CreatedAt       time.Time
+}
+
+type LadoSessionBackground struct {
+	SessionID string
+	TasksJson string
+	Source    string
+	UpdatedAt time.Time
 }
 
 type LadoSessionMetric struct {
@@ -1168,6 +1206,7 @@ type LadoWatchSetting struct {
 	StallMinutes       sql.NullInt64
 	WakeEnabled        sql.NullInt64
 	UpdatedAt          time.Time
+	AwaitMinutes       sql.NullInt64
 }
 
 type ModelUsageEvent struct {

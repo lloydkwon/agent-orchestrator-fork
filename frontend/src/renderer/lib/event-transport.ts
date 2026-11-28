@@ -21,6 +21,7 @@ import { baseUrlForHost, connectedHosts, subscribeConnectedHosts } from "./host-
 import { probeRemoteSse } from "./remote-sse-probe";
 import { ladoPlanQueryRoot, ladoProjectIssuesQueryKey, ladoQueryRoot, ladoTasksQueryKey, ladoTaskViewQueryKey } from "./lado";
 import { listenLadoAlertClicks, showLadoAlertNotifications } from "./lado-alert-notifications";
+import { listenLadoNoticeClicks, showLadoNoticeNotifications } from "./lado-notice-notifications";
 import { createLadoEventBatch } from "./lado-events";
 
 export type EventTransport = {
@@ -73,9 +74,11 @@ export function createEventTransport(queryClient: QueryClient): EventTransport {
 			// LADO fork: projects whose issue-backed tasks changed, and the tasks.
 			const pendingLadoTaskProjects = new Set<string>();
 			const pendingLadoTasks = new Set<string>();
-			// A new LADO alert shows once as a desktop notification (issue #42).
+			// A new LADO alert shows once as a desktop notification (issue #42),
+			// and so does a new orchestrator notice.
 			const ladoEvents = createLadoEventBatch(queryClient, {
 				onNewAlerts: (alerts) => void showLadoAlertNotifications(alerts),
+				onNewNotices: (notices) => void showLadoNoticeNotifications(notices),
 			});
 			let workspaceInvalidationPending = false;
 			let allConversationsInvalidationPending = false;
@@ -568,8 +571,10 @@ export function createEventTransport(queryClient: QueryClient): EventTransport {
 			connectSource();
 			const removeConnectedHostsListener = subscribeConnectedHosts(syncRemoteSources);
 			syncRemoteSources();
-			// LADO fork: a click on a LADO alert's notification opens its task.
+			// LADO fork: a click on a LADO alert's notification opens its task,
+			// and one on a notice's opens its project's board.
 			const removeLadoAlertClicks = listenLadoAlertClicks();
+			const removeLadoNoticeClicks = listenLadoNoticeClicks();
 
 			return () => {
 				healthAttempt += 1;
@@ -585,6 +590,7 @@ export function createEventTransport(queryClient: QueryClient): EventTransport {
 				removeBaseUrlListener();
 				removeConnectedHostsListener();
 				removeLadoAlertClicks();
+				removeLadoNoticeClicks();
 				source?.close();
 				accountSource?.close();
 				for (const connection of remoteSources.values()) {

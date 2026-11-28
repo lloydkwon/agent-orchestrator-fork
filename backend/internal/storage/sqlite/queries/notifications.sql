@@ -134,6 +134,15 @@ WHERE type = 'needs_input'
     WHERE is_terminated = TRUE
        OR activity_state NOT IN ('waiting_input', 'blocked')
   )
+  -- LADO fork: the LADO watch raised this row for a worker idle after
+  -- asking its owner, and resolves it itself while the worker stays idle.
+  AND NOT (
+    source_key LIKE 'lado-await:%'
+    AND session_id IN (
+      SELECT id FROM sessions
+      WHERE is_terminated = FALSE AND activity_state = 'idle'
+    )
+  )
 RETURNING *;
 
 -- name: DeleteStaleDismissedNeedsInputNotifications :execrows
@@ -145,6 +154,15 @@ WHERE type = 'needs_input'
     SELECT id FROM sessions
     WHERE is_terminated = TRUE
        OR activity_state NOT IN ('waiting_input', 'blocked')
+  )
+  -- LADO fork: the LADO watch raised this row for a worker idle after
+  -- asking its owner, and resolves it itself while the worker stays idle.
+  AND NOT (
+    source_key LIKE 'lado-await:%'
+    AND session_id IN (
+      SELECT id FROM sessions
+      WHERE is_terminated = FALSE AND activity_state = 'idle'
+    )
   );
 
 -- name: GetOpenNotificationByDedupe :one

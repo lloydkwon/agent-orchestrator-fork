@@ -1764,7 +1764,10 @@ describe("ChatWorkspace timeline", () => {
 		const onLinkOpen = vi.fn();
 
 		render(<ChatWorkspace snapshot={snapshot} onLinkOpen={onLinkOpen} />);
+		// LADO fork (TDD §11): 내장 패널은 수정키 클릭으로 연다.
+		await user.keyboard("{Alt>}");
 		await user.click(screen.getByRole("link", { name: "local preview" }));
+		await user.keyboard("{/Alt}");
 
 		expect(onLinkOpen).toHaveBeenCalledWith("http://localhost:5173");
 	});

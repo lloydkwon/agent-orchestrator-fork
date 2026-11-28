@@ -79,6 +79,26 @@ export function toastSilent(
 }
 
 /**
+ * LADO fork: the types whose Linux toast is critical. A GNOME session in Do
+ * Not Disturb shows a banner only for a critical notification and files every
+ * other one in the message list, so these are the ones the user has to see: an
+ * agent waiting on the user, a PR waiting on a merge, a LADO alert, and a LADO
+ * orchestrator notice a person has to act on (lado-notice-notifications).
+ */
+const CRITICAL_TOAST_TYPES: ReadonlySet<string> = new Set(["needs_input", "ready_to_merge", "lado_alert", "lado_notice_urgent"]);
+
+/**
+ * The `urgency` of the OS toast, or `undefined` where Electron ignores it
+ * (it reads `urgency` on Linux only). Critical toasts also stay on screen
+ * until the user acts on them, which is why the informational types stay
+ * normal.
+ */
+export function toastUrgency(platform: NodeJS.Platform, type: string | undefined): "critical" | "normal" | undefined {
+	if (platform !== "linux") return undefined;
+	return type !== undefined && CRITICAL_TOAST_TYPES.has(type) ? "critical" : "normal";
+}
+
+/**
  * macOS dock bounce style. A blocked agent waiting on the user keeps bouncing
  * until the app is activated ("critical"); anything else bounces once
  * ("informational"). This is where urgency lives, so every notification can

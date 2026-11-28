@@ -221,6 +221,53 @@ func TestTickQueuesOneLinePerEvent(t *testing.T) {
 	}
 }
 
+// A task run in parts tells its start when its parts run starts, before any
+// worker that can open its pull request exists, and its integration worker's
+// start as the integration, not as a second start. A parts run from before
+// notices started tells nothing.
+func TestTickTellsAPartsRunStartAndItsIntegration(t *testing.T) {
+	f := newFixture()
+	f.store.tasks["demo"] = []domain.LadoTask{
+		{ID: "lado-task-5", ProjectID: "demo", IssueRef: "github:acme/demo#31",
+			Queue: domain.LadoQueueEntry{ID: "q-5", PartsStartedAt: t0.Add(time.Minute)},
+			Parts: domain.LadoTaskPartsSummary{Total: 4},
+		},
+		{ID: "lado-task-6", ProjectID: "demo", IssueRef: "github:acme/demo#32",
+			Queue: domain.LadoQueueEntry{ID: "q-6", PartsStartedAt: t0.Add(2 * time.Minute)},
+			Parts: domain.LadoTaskPartsSummary{Total: 2, Merged: 2},
+			Execution: domain.LadoExecution{
+				SessionID: "demo-12", Role: domain.LadoRoleIntegration, StartedAt: t0.Add(20 * time.Minute),
+				PR: domain.LadoExecutionPR{URL: "https://github.com/acme/demo/pull/44"},
+			},
+		},
+		{ID: "lado-task-7", ProjectID: "demo", IssueRef: "github:acme/demo#33",
+			Queue: domain.LadoQueueEntry{ID: "q-7", PartsStartedAt: t0.Add(3 * time.Minute)},
+		},
+		{ID: "lado-task-8", ProjectID: "demo", IssueRef: "github:acme/demo#34",
+			Queue: domain.LadoQueueEntry{ID: "q-8", PartsStartedAt: t0.Add(-time.Hour)},
+			Parts: domain.LadoTaskPartsSummary{Total: 3},
+		},
+	}
+	f.orch.live = false
+	f.tick(t)
+	adds := f.store.adds
+	f.tick(t)
+	if f.store.adds != adds {
+		t.Fatalf("the second tick wrote %d notices again", f.store.adds-adds)
+	}
+	got := f.store.texts(false)
+	want := []string{
+		"LADO 알림: #31 실행 시작 (파트 4개)",
+		"LADO 알림: #32 실행 시작 (파트 2개)",
+		"LADO 알림: #32 통합 시작",
+		"LADO 알림: #32 PR #44 열림",
+		"LADO 알림: #33 실행 시작 (파트로 나눔)",
+	}
+	if !slices.Equal(got, want) {
+		t.Fatalf("notices =\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+}
+
 // Notices wait while the orchestrator works and go together, in one message
 // of their lines only, once it is idle and no new one came for a while.
 func TestNoticesWaitForAnIdleOrchestratorAndGoTogether(t *testing.T) {
@@ -322,5 +369,39 @@ func TestTickMovesWatchAlertsToTheOutboxOnce(t *testing.T) {
 		if n.ProjectID != "demo" || !strings.HasPrefix(n.Key, "alert:") {
 			t.Fatalf("notice %+v, want project demo and an alert key", n)
 		}
+	}
+}
+
+// A run whose PR waits for its integration approval tells so once per head:
+// a newer head waiting again tells again, and an approved head tells
+// nothing more.
+func TestTickTellsAnIntegrationWaitOncePerHead(t *testing.T) {
+	f := newFixture()
+	ref := domain.IssueID("github:acme/demo#31")
+	waiting := func(head string, approved bool) []domain.LadoTask {
+		return []domain.LadoTask{{ID: "lado-task-1", ProjectID: "demo", IssueRef: ref, Execution: domain.LadoExecution{
+			SessionID: "demo-9", StartedAt: t0.Add(time.Minute),
+			PR:           domain.LadoExecutionPR{URL: "https://github.com/acme/demo/pull/41", HeadSHA: head},
+			Verification: domain.LadoExecutionVerification{HeadSHA: head, Outcome: domain.LadoVerifyPass},
+			Integration:  domain.LadoExecutionIntegration{HeadApproved: approved},
+		}}}
+	}
+	f.orch.live = false
+	f.store.tasks["demo"] = waiting("aaa", false)
+	f.tick(t)
+	f.tick(t)
+	f.store.tasks["demo"] = waiting("bbb", false)
+	f.tick(t)
+	f.store.tasks["demo"] = waiting("bbb", true)
+	f.tick(t)
+	got := f.store.texts(false)
+	want := []string{
+		"LADO 알림: #31 실행 시작",
+		"LADO 알림: #31 PR #41 열림",
+		"LADO 알림: #31 통합 승인 대기 — 칸반에서 승인",
+		"LADO 알림: #31 통합 승인 대기 — 칸반에서 승인",
+	}
+	if !slices.Equal(got, want) {
+		t.Fatalf("notices =\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
 	}
 }

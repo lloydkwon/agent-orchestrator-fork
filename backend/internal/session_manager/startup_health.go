@@ -13,6 +13,8 @@ import (
 
 // checkSessionHealth observes existing controllers. Startup must never create a
 // provider, restore a worktree, or replay a task to discover whether it is alive.
+// LADO fork: once it knows an agent is gone, the developer's setting may start
+// it again (lado_startup_restore.go); the observing itself is unchanged.
 func (m *Manager) checkSessionHealth(ctx context.Context, rec domain.SessionRecord) error {
 	if rec.ProvisionState.WithDefault() != domain.SessionProvisionReady {
 		return nil
@@ -64,7 +66,8 @@ func (m *Manager) checkSessionHealth(ctx context.Context, rec domain.SessionReco
 		_, err = m.resumeChatController(ctx, "check session", rec, project,
 			workspaceInfo(rec), false, true, "", domain.SessionInterfaceTransitionHistoryStrict)
 		if errors.Is(err, ports.ErrChatHostNotRunning) {
-			return m.recordAgentExited(ctx, rec)
+			// LADO fork: may start it again (lado_startup_restore.go).
+			return m.agentMissingAtStartup(ctx, rec)
 		}
 		return err
 	}
@@ -81,7 +84,8 @@ func (m *Manager) checkSessionHealth(ctx context.Context, rec domain.SessionReco
 		// intact; its unverified identity will not qualify for native restore.
 		return nil
 	}
-	return m.recordAgentExited(ctx, rec)
+	// LADO fork: may start it again (lado_startup_restore.go).
+	return m.agentMissingAtStartup(ctx, rec)
 }
 
 // Setup's durable completion is written before any controller may launch.

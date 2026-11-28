@@ -13,6 +13,12 @@ export type NotificationClear = Pick<ClearNotificationsResult, "clearId" | "clea
 
 export const unreadNotificationsQueryKey = ["notifications", "history", "unread"] as const;
 export const recentNotificationsQueryKey = ["notifications", "history", "all"] as const;
+/**
+ * LADO fork (2026-11-27): the open needs_input notifications, which mark the sessions waiting on
+ * their owner in the sidebar (hooks/useAwaitingOwner.ts). Kept out of the "history" prefix: those
+ * caches are infinite pages, this one is one plain page.
+ */
+export const awaitingOwnerQueryKey = ["notifications", "awaiting-owner"] as const;
 export const NOTIFICATION_PAGE_SIZE = 100;
 
 const EVENTSOURCE_CLOSED = 2;
@@ -46,6 +52,7 @@ export function reconcileNotifications(queryClient: QueryClient): Promise<void> 
 	return Promise.all([
 		queryClient.invalidateQueries({ queryKey: unreadNotificationsQueryKey }),
 		queryClient.invalidateQueries({ queryKey: recentNotificationsQueryKey }),
+		refetchAwaitingOwner(queryClient),
 	]).then(() => undefined);
 }
 
@@ -67,8 +74,13 @@ function isUnresolved(notification: NotificationDTO): boolean {
 	return UNRESOLVABLE_TYPES.has(notification.type) && !notification.resolvedAt;
 }
 
+/** Reloads the waits on the owner where a sidebar shows them; nothing when none does. */
+function refetchAwaitingOwner(queryClient: QueryClient): Promise<void> {
+	return queryClient.refetchQueries({ queryKey: awaitingOwnerQueryKey, type: "active" }).catch(() => undefined);
+}
+
 export async function fetchNotificationsPage(
-	status: NotificationListStatus,
+	status: NotificationListStatus | "unresolved",
 	cursor = "",
 	signal?: AbortSignal,
 ): Promise<NotificationsPage> {
@@ -521,6 +533,8 @@ export function createNotificationsTransport(
 			let pendingLiveEvents: Promise<void> | undefined;
 
 			const applyLiveNotificationEvent = (event: LiveNotificationEvent): Promise<void> | void => {
+				// Any change can open or close a wait on the owner; the list is one small page.
+				void refetchAwaitingOwner(queryClient);
 				if (event.kind === "cleared") {
 					return queryClient
 						.cancelQueries({ queryKey: ["notifications", "history"] }, { revert: false })

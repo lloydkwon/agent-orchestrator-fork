@@ -292,6 +292,29 @@ func (q *Queries) InsertLadoTaskPart(ctx context.Context, arg InsertLadoTaskPart
 	return err
 }
 
+const latestSessionReportAt = `-- name: LatestSessionReportAt :one
+SELECT state, created_at
+FROM reports
+WHERE session_id = ?
+ORDER BY created_at DESC, id DESC
+LIMIT 1
+`
+
+type LatestSessionReportAtRow struct {
+	State     string
+	CreatedAt time.Time
+}
+
+// The state of a session's newest report and when it was made (LADO fork:
+// the worker watch takes a report as the current turn's only when it was
+// made after that turn was asked for).
+func (q *Queries) LatestSessionReportAt(ctx context.Context, sessionID string) (LatestSessionReportAtRow, error) {
+	row := q.db.QueryRowContext(ctx, latestSessionReportAt, sessionID)
+	var i LatestSessionReportAtRow
+	err := row.Scan(&i.State, &i.CreatedAt)
+	return i, err
+}
+
 const latestSessionReportState = `-- name: LatestSessionReportState :one
 SELECT state, note
 FROM reports

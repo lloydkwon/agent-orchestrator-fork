@@ -15,6 +15,7 @@ import {
 	archiveExtraction,
 	createWorkDirectory,
 	npmInvocation,
+	patchClaudeBackgroundTaskReport,
 	patchClaudeContextUsage,
 	patchClaudeFoldedPromptSettlement,
 	patchClaudeHibernationCheck,
@@ -89,6 +90,7 @@ run(npm.command, npm.args, { cwd: outDir });
 patchClaudeRetryDetails(claudeAdapter);
 patchClaudeContextUsage(claudeAdapter);
 patchClaudeHibernationCheck(claudeAdapter);
+patchClaudeBackgroundTaskReport(claudeAdapter);
 patchClaudeFoldedPromptSettlement(claudeAdapter);
 patchClaudeStaleIdleDebt(claudeAdapter);
 patchClaudeSteerSettlement(claudeAdapter);

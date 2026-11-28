@@ -179,6 +179,15 @@ WHERE type = 'needs_input'
     WHERE is_terminated = TRUE
        OR activity_state NOT IN ('waiting_input', 'blocked')
   )
+  -- LADO fork: the LADO watch raised this row for a worker idle after
+  -- asking its owner, and resolves it itself while the worker stays idle.
+  AND NOT (
+    source_key LIKE 'lado-await:%'
+    AND session_id IN (
+      SELECT id FROM sessions
+      WHERE is_terminated = FALSE AND activity_state = 'idle'
+    )
+  )
 `
 
 func (q *Queries) DeleteStaleDismissedNeedsInputNotifications(ctx context.Context) (int64, error) {
@@ -670,6 +679,15 @@ WHERE type = 'needs_input'
     SELECT id FROM sessions
     WHERE is_terminated = TRUE
        OR activity_state NOT IN ('waiting_input', 'blocked')
+  )
+  -- LADO fork: the LADO watch raised this row for a worker idle after
+  -- asking its owner, and resolves it itself while the worker stays idle.
+  AND NOT (
+    source_key LIKE 'lado-await:%'
+    AND session_id IN (
+      SELECT id FROM sessions
+      WHERE is_terminated = FALSE AND activity_state = 'idle'
+    )
   )
 RETURNING id, session_id, project_id, pr_url, type, title, body, status, created_at, resolved_at, dismissed_at, source_key
 `

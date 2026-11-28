@@ -112,8 +112,9 @@ func (s *Service) Settings(ctx context.Context) (domain.LadoDispatchSettings, er
 // SetSettings replaces the dispatch settings and returns them as stored. The
 // next dispatch pass uses them; running executions keep their deadlines.
 // A zero MaxPlanWorkers keeps the stored plan request cap, and a zero
-// PlanReview.MaxPaths the stored review skip settings, so a caller that knows
-// only the executions' settings changes nothing else. Nothing verifies who
+// PlanReview.MaxPaths the stored review skip settings, and an empty
+// RestoreOnStart the stored one, so a caller that knows only the executions'
+// settings changes nothing else. Nothing verifies who
 // sent the change, so its audit event's actor is "api". Sending the current
 // settings changes nothing.
 func (s *Service) SetSettings(ctx context.Context, settings domain.LadoDispatchSettings) (domain.LadoDispatchSettings, error) {
@@ -136,6 +137,9 @@ func (s *Service) SetSettings(ctx context.Context, settings domain.LadoDispatchS
 	}
 	if settings.MinFreeDiskGB == 0 {
 		settings.HoldOnDiskLow, settings.MinFreeDiskGB = current.HoldOnDiskLow, current.MinFreeDiskGB
+	}
+	if settings.RestoreOnStart == "" {
+		settings.RestoreOnStart = current.RestoreOnStart
 	}
 	if err := settings.Validate(); err != nil {
 		return domain.LadoDispatchSettings{}, InvalidSettings(strings.TrimPrefix(err.Error(), domain.ErrLadoDispatchSettingsInvalid.Error()+": "))
@@ -172,7 +176,8 @@ func sameSettings(a, b domain.LadoDispatchSettings) bool {
 	return a.MaxConcurrent == b.MaxConcurrent && a.MaxRunMinutes == b.MaxRunMinutes && a.HoldOnMemoryTight == b.HoldOnMemoryTight &&
 		a.MaxPlanWorkers == b.MaxPlanWorkers && a.PlanReview.Skip == b.PlanReview.Skip && a.PlanReview.MaxPaths == b.PlanReview.MaxPaths &&
 		reflect.DeepEqual(a.PlanReview.Patterns, b.PlanReview.Patterns) &&
-		a.MaxWorkers == b.MaxWorkers && a.HoldOnDiskLow == b.HoldOnDiskLow && a.MinFreeDiskGB == b.MinFreeDiskGB
+		a.MaxWorkers == b.MaxWorkers && a.HoldOnDiskLow == b.HoldOnDiskLow && a.MinFreeDiskGB == b.MinFreeDiskGB &&
+		a.RestoreOnStart == b.RestoreOnStart
 }
 
 func settingsPayload(s domain.LadoDispatchSettings) map[string]any {
@@ -181,6 +186,7 @@ func settingsPayload(s domain.LadoDispatchSettings) map[string]any {
 		"maxPlanWorkers": s.MaxPlanWorkers, "planReviewSkip": s.PlanReview.Skip, "planReviewSkipMaxPaths": s.PlanReview.MaxPaths,
 		"planReviewPatterns": s.PlanReview.Patterns,
 		"maxWorkers":         s.MaxWorkers, "holdOnDiskLow": s.HoldOnDiskLow, "minFreeDiskGb": s.MinFreeDiskGB,
+		"restoreOnStart": s.RestoreOnStart.On(),
 	}
 }
 

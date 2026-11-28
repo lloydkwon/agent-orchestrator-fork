@@ -198,8 +198,30 @@ END`,
 	// desktop alert, the kanban badge and other windows follow. A session
 	// watch publishes when its limit state, stall state or compactions
 	// change; a new row and a moved read offset publish nothing.
+	// A session's background tasks publish when AO first hears of them, when
+	// they change and when AO forgets them (LADO fork, 2026-11-27): the
+	// sidebar shows a session idle on its own background work.
+	ladoBackgroundCDCTrigger("lado_cdc_session_background_insert", "AFTER INSERT ON lado_session_background", "", "NEW"),
+	ladoBackgroundCDCTrigger("lado_cdc_session_background_update", "AFTER UPDATE ON lado_session_background",
+		"WHEN OLD.tasks_json IS NOT NEW.tasks_json", "NEW"),
+	ladoBackgroundCDCTrigger("lado_cdc_session_background_delete", "AFTER DELETE ON lado_session_background", "", "OLD"),
 	ladoAlertCDCTrigger("lado_cdc_alerts_insert", "AFTER INSERT ON lado_alerts", "", "insert"),
 	ladoAlertCDCTrigger("lado_cdc_alerts_update", "AFTER UPDATE ON lado_alerts", "WHEN OLD.seen_at IS NOT NEW.seen_at", "update"),
+	// An orchestrator notice publishes once, when LADO queues it, so the
+	// desktop app shows it as a notification too. The change names the notice
+	// only: the event stream also reaches the LAN, and its text stays on
+	// LADO's loopback routes. A repeated key inserts nothing, so it publishes
+	// nothing; sending or dropping a notice publishes nothing either.
+	`CREATE TRIGGER lado_cdc_orchestrator_notices_insert
+AFTER INSERT ON lado_orchestrator_notices
+BEGIN
+    INSERT INTO change_log (project_id, session_id, event_type, payload, created_at)
+    SELECT projects.id, NULL, 'session_updated',
+        json_object('kind', 'lado_notice', 'noticeId', NEW.id, 'op', 'insert', 'projectId', projects.id),
+        datetime('now')
+    FROM projects
+    WHERE projects.id = NEW.project_id;
+END`,
 	// The log watch publishes a lado_log_watch change in the row's project:
 	// a fingerprint when it is recorded and when what the incidents and the
 	// card read of it changes, the settings when they are saved or the burst
@@ -292,6 +314,24 @@ BEGIN
         datetime('now')
     FROM projects
     WHERE projects.id = NEW.project_id;
+END`
+}
+
+// ladoBackgroundCDCTrigger publishes a session's background-task change on
+// the session, in its project. A session already gone publishes nothing.
+func ladoBackgroundCDCTrigger(name, event, when, row string) string {
+	if when != "" {
+		when = "\n" + when
+	}
+	return `CREATE TRIGGER ` + name + `
+` + event + when + `
+BEGIN
+    INSERT INTO change_log (project_id, session_id, event_type, payload, created_at)
+    SELECT sessions.project_id, sessions.id, 'session_updated',
+        json_object('kind', 'lado_background', 'sessionId', sessions.id, 'projectId', sessions.project_id),
+        datetime('now')
+    FROM sessions
+    WHERE sessions.id = ` + row + `.session_id;
 END`
 }
 

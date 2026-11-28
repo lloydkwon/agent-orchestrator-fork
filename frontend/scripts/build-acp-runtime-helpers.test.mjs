@@ -18,6 +18,7 @@ import {
 	npmInvocation,
 	patchClaudeContextUsage,
 	patchClaudeFoldedPromptSettlement,
+	patchClaudeBackgroundTaskReport,
 	patchClaudeHibernationCheck,
 	patchClaudeRetryDetails,
 	patchClaudeStaleIdleDebt,
@@ -112,6 +113,102 @@ describe("patchClaudeRetryDetails", () => {
 		expect(patched).toContain("message.retry_delay_ms / 1000");
 		expect(patched).toContain("Trying again in ${retryDelay}.");
 		expect(patched).toContain("details: retryDetails");
+	});
+});
+
+// LADO fork (2026-11-27): AO shows a worker idle on its own background work
+// (💻) and keeps the LADO stall watch off it, from the bridge's native task
+// registry: a list request for resync, and a notice when the list changes.
+describe("patchClaudeBackgroundTaskReport", () => {
+	const anchors = [
+		"function shouldEmitRawMessage(config, message) {}",
+		"agent.startTask = function (session, params, message) { session.liveBackgroundTasks.set(message.task_id, { isSubagent: !!message.subagent_type, }); };",
+		"agent.endTask = function (session, params, message) { session.liveBackgroundTasks.delete(message.task_id); session.aoTaskEndedAt = Date.now(); };",
+		"agent.endUpdated = function (session, params, message) { session.liveBackgroundTasks.delete(message.task_id); session.aoTaskEndedAt = Date.now(); };",
+		"agent.level = function (session, params, message) { switch (message.subtype) { case \"background_tasks_changed\": for (const [id, t] of session.liveBackgroundTasks) if (!message.live.includes(id)) t.endedPerLevel = \"ended\"; break; } };",
+		"connection.onRequest(GOAL_CONTROL_METHOD, { parse: parseGoalRequest }, (ctx) => agent.goal(ctx.params));",
+	];
+
+	function load(adapterPath) {
+		const handlers = new Map();
+		const connection = { onRequest: (method, parser, handler) => {
+			handlers.set(method, (ctx) => handler({ params: parser.parse(ctx.params) }));
+			return connection;
+		} };
+		const notices = [];
+		const tasks = new Map();
+		const session = { liveBackgroundTasks: tasks };
+		const agent = { sessions: { native: session }, client: { extNotification: async (method, params) => { notices.push({ method, params }); } } };
+		new Function("connection", "agent", "GOAL_CONTROL_METHOD", "parseGoalRequest", "RequestError", readFileSync(adapterPath, "utf8"))(
+			connection, agent, "goal", params => params, { invalidParams: () => new Error("invalid session") },
+		);
+		return { handlers, notices, tasks, session, agent };
+	}
+
+	const settle = () => new Promise((resolve) => setTimeout(resolve, 120));
+
+	it("lists live background tasks and tells AO when the list changes", async () => {
+		const adapterPath = join(temporaryDirectory(), "acp-agent.js");
+		writeFileSync(adapterPath, anchors.join("\n"));
+		expect(patchClaudeBackgroundTaskReport(adapterPath)).toBe(true);
+		expect(patchClaudeBackgroundTaskReport(adapterPath)).toBe(false);
+		const { handlers, notices, session, agent } = load(adapterPath);
+		const list = handlers.get("_ao/session/background_tasks");
+		const ctx = { params: { sessionId: "native" } };
+		const params = { sessionId: "native" };
+		expect(list(ctx)).toEqual({ tasks: [] });
+
+		agent.startTask(session, params, { task_id: "sh-1", task_type: "shell", description: "wait_event.sh 7000" });
+		agent.startTask(session, params, { task_id: "chore", task_type: "shell", description: "x", skip_transcript: true });
+		await settle();
+		const listed = list(ctx).tasks;
+		expect(listed).toEqual([{ taskId: "sh-1", type: "shell", description: "wait_event.sh 7000", startedAt: expect.any(Number) }]);
+		expect(notices).toEqual([{ method: "_ao/session/background_tasks", params: { sessionId: "native", tasks: listed } }]);
+
+		agent.endTask(session, params, { task_id: "sh-1" });
+		await settle();
+		expect(list(ctx)).toEqual({ tasks: [] });
+		expect(notices.at(-1).params.tasks).toEqual([]);
+		expect(notices).toHaveLength(2);
+	});
+
+	it("drops a task the SDK's level no longer lists, and an ended update", async () => {
+		const adapterPath = join(temporaryDirectory(), "acp-agent.js");
+		writeFileSync(adapterPath, anchors.join("\n"));
+		patchClaudeBackgroundTaskReport(adapterPath);
+		const { handlers, notices, session, agent } = load(adapterPath);
+		const params = { sessionId: "native" };
+		agent.startTask(session, params, { task_id: "a", task_type: "monitor", description: "m" });
+		agent.startTask(session, params, { task_id: "b", subagent_type: "general-purpose", description: "s" });
+		await settle();
+		expect(handlers.get("_ao/session/background_tasks")({ params: params }).tasks.map((t) => [t.taskId, t.type])).toEqual([["a", "monitor"], ["b", "subagent"]]);
+		agent.level(session, params, { subtype: "background_tasks_changed", live: ["b"] });
+		await settle();
+		expect(notices.at(-1).params.tasks.map((t) => t.taskId)).toEqual(["b"]);
+		agent.endUpdated(session, params, { task_id: "b" });
+		await settle();
+		expect(notices.at(-1).params.tasks).toEqual([]);
+	});
+
+	it("refuses an unknown or closed session", () => {
+		const adapterPath = join(temporaryDirectory(), "acp-agent.js");
+		writeFileSync(adapterPath, anchors.join("\n"));
+		patchClaudeBackgroundTaskReport(adapterPath);
+		const { handlers, session } = load(adapterPath);
+		const list = handlers.get("_ao/session/background_tasks");
+		for (const sessionId of [undefined, "missing", "__proto__"]) {
+			expect(() => list({ params: { sessionId } })).toThrow("invalid session");
+		}
+		session.queryClosed = true;
+		expect(() => list({ params: { sessionId: "native" } })).toThrow("invalid session");
+	});
+
+	it("fails packaging if the pinned task registry changes", () => {
+		const adapterPath = join(temporaryDirectory(), "acp-agent.js");
+		for (const missing of anchors.keys()) {
+			writeFileSync(adapterPath, anchors.filter((_, i) => i !== missing).join("\n"));
+			expect(() => patchClaudeBackgroundTaskReport(adapterPath)).toThrow("background-task report");
+		}
 	});
 });
 

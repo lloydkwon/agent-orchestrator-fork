@@ -40,11 +40,14 @@ import { SessionArchiveDialog, type SessionArchiveChoice } from "./SessionArchiv
 import { ArtifactPreviewCard } from "./SessionLinkPreviewCard";
 import { HoverCard, HoverCardTrigger } from "./ui/hover-card";
 import { LadoSessionLine } from "./lado/LadoSessionLine";
+import { useSessionBackground } from "../hooks/useSessionBackground";
+import type { LadoSessionBackground } from "../lib/lado-background";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 
 export function toBoardSessionPresentation(
 	session: WorkspaceSession,
 	t?: TFunction,
+	background?: LadoSessionBackground,
 ): BoardSessionPresentation {
 	const switchPresentation = deriveSessionAgentSwitchPresentation(session);
 	const switchVisual = switchPresentation ? agentSwitchStatusVisual(switchPresentation) : undefined;
@@ -66,6 +69,16 @@ export function toBoardSessionPresentation(
 					tone: "var(--color-status-exited)",
 				}
 			: undefined;
+	// LADO fork (2026-11-27): idle with its own background work running is not «Needs review».
+	const backgroundStatus =
+		t && session.activity?.state === "idle" && (background?.tasks.length ?? 0) > 0
+			? {
+					className: "text-passive",
+					indicatorClassName: "bg-passive",
+					label: `💻 ${t("session.backgroundWaiting")}`,
+					tone: "var(--color-passive)",
+				}
+			: undefined;
 	return {
 		activity: session.activity,
 		branch: sessionBranchPresentation(session).branch,
@@ -77,7 +90,7 @@ export function toBoardSessionPresentation(
 		status: session.status,
 		statusReadiness: session.statusReadiness,
 		statusPresentation:
-			provisioningStatus ?? failedStartStatus ??
+			provisioningStatus ?? failedStartStatus ?? backgroundStatus ??
 			(t && switchPresentation && switchVisual
 				? {
 						className: switchVisual.className,
@@ -200,6 +213,7 @@ function DesktopSessionCard({
 }) {
 	const { t } = useTranslation();
 	const queryClient = useQueryClient();
+	const background = useSessionBackground(session);
 	const [confirmOpen, setConfirmOpen] = useState(false);
 	const summaries = sessionPRDisplaySummaries(
 		session,
@@ -311,8 +325,8 @@ function DesktopSessionCard({
 			renderAvatar={(provider) => <AgentAvatar provider={provider} />}
 			session={
 				hideTerminatedStatus
-					? hideTerminatedCardStatus(toBoardSessionPresentation(session, t))
-					: toBoardSessionPresentation(session, t)
+					? hideTerminatedCardStatus(toBoardSessionPresentation(session, t, background))
+					: toBoardSessionPresentation(session, t, background)
 			}
 			translate={translate}
 		/>

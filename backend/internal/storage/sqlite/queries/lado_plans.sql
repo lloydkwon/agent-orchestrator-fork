@@ -112,8 +112,8 @@ FROM lado_plan_revisions
 WHERE session_id = ? AND path = ? AND artifact_version = ? AND sha256 = ?;
 
 -- name: InsertLadoPresenceProof :exec
-INSERT INTO lado_presence_proofs (nonce, action, subject_id, dev, expires_at, used_at)
-VALUES (?, ?, ?, ?, ?, ?);
+INSERT INTO lado_presence_proofs (nonce, action, subject_id, dev, via, expires_at, used_at)
+VALUES (?, ?, ?, ?, ?, ?, ?);
 
 -- name: InsertLadoPlanApproval :one
 INSERT INTO lado_plan_approvals (id, revision_id, task_id, sha256, proof_nonce, approved_at)

@@ -165,6 +165,68 @@ export function patchClaudeHibernationCheck(adapterPath) {
 	return true;
 }
 
+// LADO fork (2026-11-27): report the bridge's live background tasks to AO.
+// A worker that ends its turn while a background shell, Monitor or subagent
+// runs is idle but waits on its own work: AO shows it 💻 and keeps the LADO
+// stall watch off it. The list is the same registry the hibernation check
+// reads (a task the SDK's level no longer lists is skipped), with the type,
+// description and start time task_started carried. AO asks for it when its
+// controller becomes ready (a daemon restart leaves this process running) and
+// gets a notice whenever it changes. Runs after patchClaudeHibernationCheck.
+export function patchClaudeBackgroundTaskReport(adapterPath) {
+	let source = readFileSync(adapterPath, "utf8");
+	const method = '"_ao/session/background_tasks"';
+	if (source.includes(method)) return false;
+	const helperAnchor = "function shouldEmitRawMessage(config, message) {";
+	const started = "session.liveBackgroundTasks.set(message.task_id, {";
+	const ended = "session.liveBackgroundTasks.delete(message.task_id); session.aoTaskEndedAt = Date.now();";
+	const level = 'case "background_tasks_changed":';
+	const marker = ".onRequest(GOAL_CONTROL_METHOD, { parse: parseGoalRequest }, (ctx) => agent.goal(ctx.params))";
+	const once = (text) => source.split(text).length === 2;
+	if (!once(helperAnchor) || !once(started) || source.split(ended).length !== 3 || !once(level) || !once(marker)) {
+		throw new Error("claude-agent-acp no longer matches AO's background-task report");
+	}
+	const changed = " aoBackgroundChanged(this, session, params.sessionId);";
+	const helpers = `function aoBackgroundTasks(session) {
+    if (!(session.liveBackgroundTasks instanceof Map)) return [];
+    const tasks = [];
+    for (const [taskId, task] of session.liveBackgroundTasks) {
+        if (task.endedPerLevel || task.aoHidden) continue;
+        tasks.push({ taskId, type: task.aoType || (task.isSubagent ? "subagent" : ""), description: task.aoDescription || "", startedAt: task.aoStartedAt ?? 0 });
+        if (tasks.length >= 32) break;
+    }
+    return tasks;
+}
+function aoBackgroundChanged(agent, session, sessionId) {
+    if (session.aoBackgroundPending) return;
+    session.aoBackgroundPending = true;
+    setTimeout(() => {
+        session.aoBackgroundPending = false;
+        const tasks = aoBackgroundTasks(session);
+        const key = JSON.stringify(tasks.map((task) => task.taskId));
+        if (key === session.aoBackgroundKey) return;
+        session.aoBackgroundKey = key;
+        Promise.resolve(agent.client.extNotification(${method}, { sessionId, tasks })).catch(() => {});
+    }, 50);
+}
+`;
+	source = source.replace(helperAnchor, helpers + helperAnchor);
+	source = source.replace(started, `aoBackgroundChanged(this, session, params.sessionId); ${started} aoType: typeof message.task_type === "string" ? message.task_type : (message.subagent_type ? "subagent" : ""), aoDescription: typeof message.description === "string" ? message.description.slice(0, 200) : "", aoStartedAt: Date.now(), aoHidden: message.skip_transcript === true,`);
+	source = source.replaceAll(ended, ended + changed);
+	source = source.replace(level, level + changed);
+	const registration = `.onRequest(${method}, { parse: params => params }, (ctx) => {
+            const id = ctx.params?.sessionId;
+            const session = typeof id === "string" && Object.hasOwn(agent.sessions, id) ? agent.sessions[id] : undefined;
+            if (!session || session.queryClosed || !(session.liveBackgroundTasks instanceof Map)) {
+                throw RequestError.invalidParams(undefined, "Live Claude session unavailable.");
+            }
+            return { tasks: aoBackgroundTasks(session) };
+        })
+        `;
+	writeFileSync(adapterPath, source.replace(marker, registration + marker));
+	return true;
+}
+
 /**
  * Settle a prompt that Claude Code folded into a task-notification cycle.
  *

@@ -1,7 +1,8 @@
 // LADO fork: Settings → Runs (docs/LJY-PRD/TDD.md §5.3, §5.4). How many
 // approved tasks of LADO projects run at once, how many LADO workers run at
 // once (a task split into parts runs several), how long one may run, and
-// whether queued work waits while memory is tight or the disk is low; then, in their own card, how many plan
+// whether queued work waits while memory is tight or the disk is low, and whether the sessions a restart
+// stopped start again; then, in their own card, how many plan
 // requests run their plan workers at once and when a small plan skips its
 // review (§5.1). A change saves at once, all values together; each project
 // also has its own cap (Project settings → LADO). Last, the worker watch's
@@ -43,7 +44,15 @@ const reviewMaxPathChoices = Array.from({ length: 20 }, (_, index) => index + 1)
 /** The values a change sends, all of them every time. */
 type RunsValues = Pick<
 	LadoDispatchSettings,
-	"maxConcurrent" | "maxRunMinutes" | "holdOnMemoryTight" | "maxPlanWorkers" | "planReview" | "maxWorkers" | "holdOnDiskLow" | "minFreeDiskGb"
+	| "maxConcurrent"
+	| "maxRunMinutes"
+	| "holdOnMemoryTight"
+	| "maxPlanWorkers"
+	| "planReview"
+	| "maxWorkers"
+	| "holdOnDiskLow"
+	| "minFreeDiskGb"
+	| "restoreOnStart"
 >;
 
 /** The row a change comes from, to put a refusal under it. */
@@ -54,6 +63,7 @@ type RunsSetting =
 	| "holdOnMemoryTight"
 	| "holdOnDiskLow"
 	| "minFreeDiskGb"
+	| "restoreOnStart"
 	| "maxPlanWorkers"
 	| "reviewSkip"
 	| "reviewMaxPaths";
@@ -83,6 +93,7 @@ export function RunsSection({ titleHidden }: { titleHidden?: boolean }) {
 			maxWorkers: saved.maxWorkers,
 			holdOnDiskLow: saved.holdOnDiskLow,
 			minFreeDiskGb: saved.minFreeDiskGb,
+			restoreOnStart: saved.restoreOnStart,
 		};
 		const next = { ...current, ...change };
 		if (JSON.stringify(next) === JSON.stringify(current)) return;
@@ -214,6 +225,22 @@ export function RunsSection({ titleHidden }: { titleHidden?: boolean }) {
 								options={diskOptions}
 								disabled={update.isPending || !shown.holdOnDiskLow}
 								onChange={(value) => save("minFreeDiskGb", { minFreeDiskGb: Number(value) })}
+							/>
+						</SettingsRow>
+						<SettingsRow
+							label={t("lado.runs.restoreOnStart")}
+							description={
+								<>
+									{t("lado.runs.restoreOnStartHint")}
+									{failure("restoreOnStart")}
+								</>
+							}
+						>
+							<Switch
+								aria-label={t("lado.runs.restoreOnStart")}
+								checked={shown.restoreOnStart}
+								disabled={update.isPending}
+								onCheckedChange={(on) => save("restoreOnStart", { restoreOnStart: on })}
 							/>
 						</SettingsRow>
 					</>

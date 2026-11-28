@@ -150,6 +150,8 @@
 		"Geist Mono Variable", "Geist Mono", "JetBrainsMono Nerd Font Mono", "JetBrainsMono Nerd Font",
 		"FiraCode Nerd Font Mono", "FiraCode Nerd Font", "MesloLGS NF", ui-monospace, SFMono-Regular, Menlo, Monaco,
 		Consolas, "Liberation Mono", "Courier New", monospace;
+	/* xterm only; the rest of the UI keeps --font-family-mono. */
+	--font-terminal: var(--font-family-mono);
 
 	/* Scale — dense UI chrome uses half-steps between base sizes */
 	--font-size-2xs: 10.5px; /* uppercase meta, board footers */
@@ -561,6 +563,8 @@
 	--color-term-bright-magenta: #d99aee;
 	--color-term-bright-cyan: #79d4df;
 	--color-term-bright-white: #f4f5f7;
+	--color-term-cursor: var(--color-working);
+	--color-term-cursor-text: var(--color-bg-terminal-opaque);
 
 	/* ═══════════════════════════════════════════════════════════════
 	   SHADOWS
@@ -647,6 +651,16 @@
 	--font-family-mono:
 		"SF Mono", SFMono-Regular, ui-monospace, "JetBrainsMono Nerd Font Mono", "JetBrainsMono Nerd Font",
 		"FiraCode Nerd Font Mono", "FiraCode Nerd Font", "MesloLGS NF", Menlo, monospace;
+}
+
+/* LADO fork: the owner's Ghostty faces (dotfiles ghostty/config.ghostty), in the
+   terminal only. CSS has no font-codepoint-map, so the order does its work: Monaco
+   before D2Coding for the Nerd Font ranges, and the symbol faces last. All are system
+   fonts; a machine without them keeps the stack above. */
+:root[data-ao-platform="linux"] {
+	--font-terminal:
+		"Cascadia Code", "Monaco Nerd Font", "D2Coding Ghostty", "D2Coding DemiLight", "D2Coding", "Noto Sans CJK KR",
+		"Noto Sans Symbols2", "Noto Sans Math", "Noto Sans Symbols", "FreeMono", var(--font-family-mono);
 }
 
 /* Light theme — set via data-theme (apply-initial-theme + Zustand toggle). */
@@ -829,6 +843,7 @@
 	--color-term-bright-magenta: #5f4476;
 	--color-term-bright-cyan: #316061;
 	--color-term-bright-white: #24292f;
+	--color-term-cursor: var(--color-text-terminal);
 }
 
 
