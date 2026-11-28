@@ -265,6 +265,28 @@ const errorKeys: Partial<Record<string, LadoErrorKey>> = {
 	LADO_KNOWLEDGE_READ_ONLY: "lado.error.knowledgeReadOnly",
 	LADO_KNOWLEDGE_FOREIGN: "lado.error.knowledgeForeign",
 	LADO_KNOWLEDGE_FAILED: "lado.error.internal",
+	// Phone approval (docs/LJY-PRD/adr/0014-phone-passkey-approvals.md).
+	LADO_PHONE_CREDENTIAL_INVALID: "lado.error.phoneCredentialInvalid",
+	LADO_PHONE_ENROLL_CLOSED: "lado.error.phoneEnrollClosed",
+	LADO_PHONE_FUNNEL_ON: "lado.error.phoneFunnelOn",
+	LADO_PHONE_NOT_LISTENING: "lado.error.phoneNotListening",
+	LADO_PHONE_OFF: "lado.error.phoneOff",
+	LADO_PHONE_PAIRING_CODE_WRONG: "lado.error.phoneCodeWrong",
+	LADO_PHONE_PAIRING_LOCKED: "lado.error.phonePairingLocked",
+	LADO_PHONE_PAIRING_NOT_FOUND: "lado.error.phonePairingNotFound",
+	LADO_PHONE_PASSKEY_EXISTS: "lado.error.phonePasskeyExists",
+	LADO_PHONE_PASSKEY_NOT_FOUND: "lado.error.phonePasskeyNotFound",
+	LADO_PHONE_PORT_TAKEN: "lado.error.phonePortTaken",
+	LADO_PHONE_PROOF_REFUSED: "lado.error.phoneProofRefused",
+	LADO_PHONE_READ_FAILED: "lado.error.internal",
+	LADO_PHONE_SAVE_FAILED: "lado.error.internal",
+	LADO_PHONE_SERVE_FAILED: "lado.error.phoneServeFailed",
+	LADO_PHONE_SOCKET_FAILED: "lado.error.internal",
+	LADO_PHONE_TAILSCALED_SAME_USER: "lado.error.phoneTailscaledSameUser",
+	LADO_PHONE_TAILSCALE_UNAVAILABLE: "lado.error.phoneTailscaleUnavailable",
+	LADO_PHONE_UNSUPPORTED: "lado.error.phoneUnsupported",
+	// The desktop app's main process, before it reaches the daemon.
+	LADO_PHONE_CODE_INVALID: "lado.error.phoneCodeInvalid",
 };
 
 // LADO_EXECUTION_FIXED also refuses restoring a run LADO stopped for good;
@@ -403,6 +425,8 @@ function detailValues(t: TFunction, code: string, details: Record<string, unknow
 		ownerPath: text("ownerPath"),
 		// The log watch setting the daemon refused (#87).
 		field: text("field"),
+		// The tailnet serve port phone approval could not use (ADR 0014).
+		port: text("port"),
 		// The PRs a merge waits for, by number, as their URLs end (#64).
 		waitingFor: (Array.isArray(details?.waitingFor) ? details.waitingFor : [])
 			.filter((url): url is string => typeof url === "string")

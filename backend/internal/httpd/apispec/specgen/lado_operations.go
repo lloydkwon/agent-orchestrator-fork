@@ -8,9 +8,27 @@ import (
 	"net/http"
 	"slices"
 
+	"github.com/swaggest/jsonschema-go"
+
 	"github.com/aoagents/agent-orchestrator/backend/internal/httpd/controllers"
 	"github.com/aoagents/agent-orchestrator/backend/internal/httpd/envelope"
 )
+
+// ladoEmptyBody is the body of a call that reads exactly the empty object:
+// controllers.EnableLadoPhoneRequest has no fields, so swaggest would leave
+// the request body out, while the handler reads "{}" strictly and the
+// presence proof signs those bytes.
+type ladoEmptyBody map[string]struct{}
+
+// JSONSchema is an object without properties.
+func (ladoEmptyBody) JSONSchema() (jsonschema.Schema, error) {
+	none := false
+	var s jsonschema.Schema
+	s.AddType(jsonschema.Object)
+	s.WithAdditionalProperties(jsonschema.SchemaOrBool{TypeBoolean: &none})
+	s.WithDescription("The empty object {}; the presence proof signs exactly these bytes.")
+	return s, nil
+}
 
 func init() {
 	for defaultName, clean := range ladoSchemaNames {
@@ -19,6 +37,7 @@ func init() {
 }
 
 var ladoSchemaNames = map[string]string{ //nolint:gosec // G101: schema names, not credentials.
+	"SpecgenLadoEmptyBody":                         "EnableLadoPhoneRequest",
 	"ControllersLadoProjectIDParam":                "LadoProjectIDParam",
 	"ControllersLadoProjectSettingsResponse":       "LadoProjectSettingsResponse",
 	"ControllersUpdateLadoProjectSettingsRequest":  "UpdateLadoProjectSettingsRequest",
@@ -262,9 +281,14 @@ var ladoSchemaNames = map[string]string{ //nolint:gosec // G101: schema names, n
 	"ControllersSetLadoLogFingerprintIgnoredRequest": "SetLadoLogFingerprintIgnoredRequest",
 
 	// The account usage limits (issue #92).
-	"ControllersLadoAccountKeyParam":             "LadoAccountKeyParam",
-	"ControllersLadoAccountLimitResponse":        "LadoAccountLimitResponse",
-	"ControllersLadoAccountLimitListResponse":    "LadoAccountLimitListResponse",
+	"ControllersLadoAccountKeyParam":          "LadoAccountKeyParam",
+	"ControllersLadoAccountLimitResponse":     "LadoAccountLimitResponse",
+	"ControllersLadoAccountLimitListResponse": "LadoAccountLimitListResponse",
+
+	// LADO fork (2026-11-27): the live sessions' background tasks.
+	"ControllersLadoBackgroundListResponse":      "LadoBackgroundListResponse",
+	"ControllersLadoSessionBackgroundResponse":   "LadoSessionBackgroundResponse",
+	"ControllersLadoBackgroundTaskResponse":      "LadoBackgroundTaskResponse",
 	"ControllersReleaseLadoAccountLimitRequest":  "ReleaseLadoAccountLimitRequest",
 	"ControllersReleaseLadoAccountLimitResponse": "ReleaseLadoAccountLimitResponse",
 
@@ -285,6 +309,15 @@ var ladoSchemaNames = map[string]string{ //nolint:gosec // G101: schema names, n
 	"ControllersLadoDBChangeExecutionResponse":     "LadoDBChangeExecutionResponse",
 	"ControllersLadoDBChangeFileContentResponse":   "LadoDBChangeFileContentResponse",
 	"ControllersApplyLadoDBChangesRequest":         "ApplyLadoDBChangesRequest",
+	"ControllersLadoPhoneStatusResponse":           "LadoPhoneStatusResponse",
+	"ControllersEnableLadoPhoneRequest":            "EnableLadoPhoneRequest",
+	"ControllersLookupLadoPhonePairingRequest":     "LookupLadoPhonePairingRequest",
+	"ControllersLadoPhonePairingResponse":          "LadoPhonePairingResponse",
+	"ControllersEnrollLadoPhonePasskeyRequest":     "EnrollLadoPhonePasskeyRequest",
+	"ControllersLadoPhonePasskeyIDParam":           "LadoPhonePasskeyIDParam",
+	"ControllersLadoPhonePasskeyResponse":          "LadoPhonePasskeyResponse",
+	"ControllersLadoPhonePasskeyListResponse":      "LadoPhonePasskeyListResponse",
+	"ControllersLadoPhoneRevokeResponse":           "LadoPhoneRevokeResponse",
 }
 
 func ladoOperations() []operation {
@@ -672,7 +705,7 @@ func ladoOperations() []operation {
 			reqBody:    controllers.WriteLadoKnowledgeNoteRequest{},
 			resps:      ladoResps(http.StatusOK, controllers.LadoKnowledgeNoteResponse{}, http.StatusBadRequest, http.StatusNotFound, http.StatusConflict),
 		},
-	}, slices.Concat(ladoSetupOperations(), ladoLogWatchOperations(), ladoAccountLimitOperations(), ladoDBChangeOperations())...)
+	}, slices.Concat(ladoSetupOperations(), ladoLogWatchOperations(), ladoAccountLimitOperations(), ladoBackgroundOperations(), ladoDBChangeOperations(), ladoPhoneOperations())...)
 }
 
 // ladoSetupOperations are the local setup routes (step 7 plan §13). Routes
@@ -840,6 +873,16 @@ func ladoLogWatchOperations() []operation {
 	}
 }
 
+// ladoBackgroundOperations list the live sessions' background tasks (LADO
+// fork, 2026-11-27).
+func ladoBackgroundOperations() []operation {
+	return []operation{{
+		method: http.MethodGet, path: "/api/v1/lado/background-tasks", id: "listLadoSessionBackground", tag: "lado",
+		summary: "List the background tasks (shells, Monitors, subagents) of the live sessions AO knows them of; a session idle on them waits on its own work",
+		resps:   ladoResps(http.StatusOK, controllers.LadoBackgroundListResponse{}),
+	}}
+}
+
 // ladoAccountLimitOperations are the account usage limit routes (issue #92).
 // No response carries the account's identity.
 func ladoAccountLimitOperations() []operation {
@@ -902,6 +945,60 @@ func ladoDBChangeOperations() []operation {
 			pathParams: []any{controllers.LadoSessionIDParam{}, controllers.LadoPresenceHeaderParam{}},
 			reqBody:    controllers.ApplyLadoDBChangesRequest{},
 			resps:      ladoResps(http.StatusOK, controllers.LadoDBChangeRunResponse{}, http.StatusBadRequest, http.StatusForbidden, http.StatusNotFound, http.StatusConflict),
+		},
+	}
+}
+
+// ladoPhoneOperations are phone approval's desktop routes. The phone itself
+// never calls them; it talks to the tailscale serve socket.
+func ladoPhoneOperations() []operation {
+	presence := []any{controllers.LadoPresenceHeaderParam{}}
+	return []operation{
+		{
+			method: http.MethodGet, path: "/api/v1/lado/phone/status", id: "getLadoPhoneStatus", tag: "lado",
+			summary: "Get phone approval's state: whether it is on, what turning it on fixed, whether its socket listens and the open enrollment",
+			resps:   ladoResps(http.StatusOK, controllers.LadoPhoneStatusResponse{}),
+		},
+		{
+			method: http.MethodPost, path: "/api/v1/lado/phone/enable", id: "enableLadoPhone", tag: "lado",
+			summary:    "Turn phone approval on with a human-presence proof (phone_approval.on, subject phone-approval): opens the socket and points tailscale serve at it; refused off Linux, when tailscaled runs as the daemon's user, or when the port serves something else or has funnel on",
+			pathParams: presence,
+			reqBody:    ladoEmptyBody{},
+			resps:      ladoResps(http.StatusOK, controllers.LadoPhoneStatusResponse{}, http.StatusBadRequest, http.StatusForbidden, http.StatusConflict, http.StatusServiceUnavailable),
+		},
+		{
+			method: http.MethodPost, path: "/api/v1/lado/phone/disable", id: "disableLadoPhone", tag: "lado",
+			summary: "Turn phone approval off; needs no human-presence proof. Clears tailscale serve only while it points at the socket",
+			resps:   ladoResps(http.StatusOK, controllers.LadoPhoneStatusResponse{}),
+		},
+		{
+			method: http.MethodPost, path: "/api/v1/lado/phone/enroll-window", id: "openLadoPhoneEnrollWindow", tag: "lado",
+			summary: "Open a ten-minute phone passkey enrollment, discarding one already open; enrolls nothing by itself",
+			resps:   ladoResps(http.StatusOK, controllers.LadoPhoneStatusResponse{}, http.StatusConflict),
+		},
+		{
+			method: http.MethodPost, path: "/api/v1/lado/phone/pairings/lookup", id: "lookupLadoPhonePairing", tag: "lado",
+			summary: "Look up the passkey a phone made by the code only the phone shows; five wrong codes close the enrollment",
+			reqBody: controllers.LookupLadoPhonePairingRequest{},
+			resps:   ladoResps(http.StatusOK, controllers.LadoPhonePairingResponse{}, http.StatusBadRequest, http.StatusForbidden, http.StatusNotFound, http.StatusConflict),
+		},
+		{
+			method: http.MethodGet, path: "/api/v1/lado/phone/passkeys", id: "listLadoPhonePasskeys", tag: "lado",
+			summary: "List the enrolled phone passkeys, revoked ones too",
+			resps:   ladoResps(http.StatusOK, controllers.LadoPhonePasskeyListResponse{}),
+		},
+		{
+			method: http.MethodPost, path: "/api/v1/lado/phone/passkeys", id: "enrollLadoPhonePasskey", tag: "lado",
+			summary:    "Enroll the passkey a phone made with a human-presence proof (phone_passkey.enroll, subject the credential's sha256); the pairing is used up whatever the outcome",
+			pathParams: presence,
+			reqBody:    controllers.EnrollLadoPhonePasskeyRequest{},
+			resps:      ladoResps(http.StatusOK, controllers.LadoPhonePasskeyResponse{}, http.StatusBadRequest, http.StatusForbidden, http.StatusNotFound, http.StatusConflict),
+		},
+		{
+			method: http.MethodDelete, path: "/api/v1/lado/phone/passkeys/{passkeyId}", id: "revokeLadoPhonePasskey", tag: "lado",
+			summary:    "Revoke a phone passkey; needs no human-presence proof. Its row stays, so the credential cannot be enrolled again",
+			pathParams: []any{controllers.LadoPhonePasskeyIDParam{}},
+			resps:      ladoResps(http.StatusOK, controllers.LadoPhoneRevokeResponse{}, http.StatusNotFound),
 		},
 	}
 }

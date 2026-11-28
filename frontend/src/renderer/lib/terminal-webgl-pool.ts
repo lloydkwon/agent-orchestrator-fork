@@ -1,5 +1,6 @@
 import { WebglAddon } from "@xterm/addon-webgl";
 import type { Terminal } from "@xterm/xterm";
+import { matchGhosttyGlyphs } from "./terminal-ghostty-glyphs";
 
 /**
  * Chromium keeps at most 16 live WebGL contexts per renderer process and
@@ -57,6 +58,7 @@ function attach(entry: Entry): void {
 		});
 		entry.term.loadAddon(addon);
 		entry.addon = addon;
+		matchGhosttyGlyphs(addon);
 	} catch (error) {
 		webglUnavailable = true;
 		// WebGL keeps box-drawing glyphs on the cell grid. The canvas addon has no

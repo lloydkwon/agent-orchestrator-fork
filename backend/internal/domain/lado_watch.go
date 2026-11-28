@@ -35,10 +35,26 @@ type LadoWatchSettings struct {
 	// WakeEnabled lets LADO send its two wake messages to the project's
 	// workers.
 	WakeEnabled bool
+	// AwaitMinutes is how long a running worker may rest after its turn,
+	// without a report, before LADO tells the owner the worker waits on them
+	// (a needs_input notification). 0 tells only of a needs-input report.
+	AwaitMinutes int
 }
 
 // Stall is StallMinutes as a duration.
 func (s LadoWatchSettings) Stall() time.Duration { return time.Duration(s.StallMinutes) * time.Minute }
+
+// LadoBackgroundOverdueFactor times the stall time is how long a worker may
+// rest on a background task before LADO alerts (owner's choice, 2026-11-27).
+const LadoBackgroundOverdueFactor = 3
+
+// BackgroundOverdue is how long a worker may rest on a background task.
+func (s LadoWatchSettings) BackgroundOverdue() time.Duration {
+	return LadoBackgroundOverdueFactor * s.Stall()
+}
+
+// Await is AwaitMinutes as a duration; 0 when the quiet wait is off.
+func (s LadoWatchSettings) Await() time.Duration { return time.Duration(s.AwaitMinutes) * time.Minute }
 
 // LadoWatchOverrides is one settings row: the global row or a project's. A
 // nil field follows the row below it, the global row for a project and the
@@ -50,6 +66,7 @@ type LadoWatchOverrides struct {
 	SessionCompactions *int
 	StallMinutes       *int
 	WakeEnabled        *bool
+	AwaitMinutes       *int
 	UpdatedAt          time.Time
 }
 
@@ -61,6 +78,9 @@ const (
 	LadoDefaultSessionCompactions = 3
 	LadoDefaultStallMinutes       = 120
 	LadoDefaultWakeEnabled        = true
+	// LADO fork: owner's decision 2026-11-27 — a worker that rests ten
+	// minutes after a turn without reporting waits on the owner.
+	LadoDefaultAwaitMinutes = 10
 )
 
 // Ranges a settings value must fall in. The compact window range is Claude
@@ -74,6 +94,8 @@ const (
 	LadoMaxSessionCompactions = 100
 	LadoMinStallMinutes       = 10
 	LadoMaxStallMinutes       = 7 * 24 * 60
+	LadoMinAwaitMinutes       = 0
+	LadoMaxAwaitMinutes       = 7 * 24 * 60
 )
 
 // LadoWatchDefaults are the settings without any row.
@@ -85,6 +107,7 @@ func LadoWatchDefaults() LadoWatchSettings {
 		SessionCompactions: LadoDefaultSessionCompactions,
 		StallMinutes:       LadoDefaultStallMinutes,
 		WakeEnabled:        LadoDefaultWakeEnabled,
+		AwaitMinutes:       LadoDefaultAwaitMinutes,
 	}
 }
 
@@ -125,6 +148,11 @@ func (o LadoWatchOverrides) Validate() error {
 			return err
 		}
 	}
+	if o.AwaitMinutes != nil {
+		if err := check("awaitMinutes", int64(*o.AwaitMinutes), LadoMinAwaitMinutes, LadoMaxAwaitMinutes); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -155,14 +183,19 @@ func (o LadoWatchOverrides) applyValid(s LadoWatchSettings) LadoWatchSettings {
 	if o.WakeEnabled != nil {
 		s.WakeEnabled = *o.WakeEnabled
 	}
+	if o.AwaitMinutes != nil && (LadoWatchOverrides{AwaitMinutes: o.AwaitMinutes}).Validate() == nil {
+		s.AwaitMinutes = *o.AwaitMinutes
+	}
 	return s
 }
 
-// The only two messages LADO sends a worker (plan decision 8). It never
-// sends free text.
+// The only three messages LADO sends a worker (plan decision 8). It never
+// sends free text. The restart message goes to a worker the daemon started
+// again at its start, whose turn the reboot cut off.
 const (
-	LadoWakeLimitResumeText = "사용 한도가 풀렸습니다. 멈춘 곳부터 이어서 진행하세요."
-	LadoWakeStallNudgeText  = "지금 상태를 보고하거나 이어서 진행하세요."
+	LadoWakeLimitResumeText   = "사용 한도가 풀렸습니다. 멈춘 곳부터 이어서 진행하세요."
+	LadoWakeStallNudgeText    = "지금 상태를 보고하거나 이어서 진행하세요."
+	LadoWakeRestartResumeText = "컴퓨터가 다시 시작되어 작업이 끊겼습니다. 실행 중이던 백그라운드 명령은 끝났을 수 있으니 상태를 확인하고 멈춘 곳부터 이어서 진행하세요."
 )
 
 // Wake limits.
@@ -177,6 +210,10 @@ const (
 	// LadoLimitGuessedReset is when LADO takes a limit to reset when it could
 	// not read the time from the limit message.
 	LadoLimitGuessedReset = 60 * time.Minute
+	// LadoWakeRestartWindow is how long after the daemon started a worker
+	// again LADO still sends it the restart message; past it the stall watch
+	// takes over.
+	LadoWakeRestartWindow = 30 * time.Minute
 )
 
 // Waiting reasons a queue entry, a part and a plan request share while LADO
@@ -486,13 +523,21 @@ const (
 	// an execution's PR (LadoResolveNeedsHuman). Its session is the
 	// execution's, Value the failed attempts in a row.
 	LadoAlertConflictUnresolved LadoAlertKind = "conflict_unresolved"
+	// LadoAlertBackgroundOverdue (LADO fork, 2026-11-27): a worker rests on
+	// a background task that has run past three times the stall time. Its
+	// level is 1, Value the minutes since the oldest task started, Threshold
+	// the limit in minutes.
+	LadoAlertBackgroundOverdue LadoAlertKind = "background_overdue"
+	// LadoAlertRestartResumed: the daemon started a worker again at its start
+	// and LADO sent it the restart message, once a session.
+	LadoAlertRestartResumed LadoAlertKind = "restart_resumed"
 )
 
 // LadoAlertKinds lists the alert kinds.
 var LadoAlertKinds = []LadoAlertKind{
 	LadoAlertTaskCost, LadoAlertSessionCost, LadoAlertSessionCompactions, LadoAlertLimited,
 	LadoAlertLimitResumed, LadoAlertStallNudged, LadoAlertStalled, LadoAlertAgentUnavailable,
-	LadoAlertConflictUnresolved,
+	LadoAlertConflictUnresolved, LadoAlertBackgroundOverdue, LadoAlertRestartResumed,
 }
 
 // Valid reports whether k is a known kind.
@@ -548,6 +593,8 @@ const (
 	ladoAlertStalled            = "#%d 세션 %s 가 %d분 넘게 멈춤"
 	ladoAlertAgentUnavailable   = "#%d 에이전트 실행 파일을 쓸 수 없어 워커를 기다리게 함"
 	ladoAlertConflictUnresolved = "#%d 실행 %s 의 PR 충돌을 LADO가 풀지 못함 — 직접 해결하세요"
+	ladoAlertBackgroundOverdue  = "#%d 세션 %s 의 백그라운드 명령이 %d분째 끝나지 않음"
+	ladoAlertRestartResumed     = "#%d 세션 %s 를 재시작 뒤 다시 띄우고 이어서 진행하라는 문구를 보냄"
 	ladoAlertUnknown            = "#%d 세션 %s 알림 %s"
 )
 
@@ -581,6 +628,10 @@ func (a LadoAlert) Line(issue int) string {
 		return ladoNoticeLine(ladoAlertAgentUnavailable, issue)
 	case LadoAlertConflictUnresolved:
 		return ladoNoticeLine(ladoAlertConflictUnresolved, issue, session)
+	case LadoAlertBackgroundOverdue:
+		return ladoNoticeLine(ladoAlertBackgroundOverdue, issue, session, a.Value)
+	case LadoAlertRestartResumed:
+		return ladoNoticeLine(ladoAlertRestartResumed, issue, session)
 	}
 	return ladoNoticeLine(ladoAlertUnknown, issue, session, a.Kind)
 }

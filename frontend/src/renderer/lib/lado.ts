@@ -840,15 +840,12 @@ export async function fetchLadoDispatchSettings(): Promise<LadoDispatchSettings>
 	return data;
 }
 
-/** Replaces all three dispatch settings; it needs no confirmation. */
+/**
+ * Replaces the dispatch settings with every value it is given; the daemon
+ * keeps a value the input leaves out. It needs no confirmation.
+ */
 export async function updateLadoDispatchSettings(input: LadoDispatchSettingsInput): Promise<LadoDispatchSettings> {
-	const { data, error } = await apiClient.PUT("/api/v1/lado/dispatch-settings", {
-		body: {
-			maxConcurrent: input.maxConcurrent,
-			maxRunMinutes: input.maxRunMinutes,
-			holdOnMemoryTight: input.holdOnMemoryTight,
-		},
-	});
+	const { data, error } = await apiClient.PUT("/api/v1/lado/dispatch-settings", { body: input });
 	if (error) throw ladoError(error, "Could not save the run settings");
 	return data;
 }
@@ -932,6 +929,7 @@ export async function updateLadoWatchSettings(projectId: string | undefined, val
 		sessionCompactions: values.sessionCompactions,
 		stallMinutes: values.stallMinutes,
 		wakeEnabled: values.wakeEnabled,
+		awaitMinutes: values.awaitMinutes,
 	};
 	const { data, error } = projectId
 		? await apiClient.PUT("/api/v1/lado/projects/{projectId}/watch-settings", { params: { path: { projectId } }, body })

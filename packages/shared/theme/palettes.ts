@@ -7,6 +7,19 @@
  * mobile in packages/mobile/lib/themeDerive.ts.
  */
 
+/** Exact terminal colors for a theme that mirrors a native terminal's own palette. */
+export type TerminalPalette = {
+	cursor: string;
+	/** Text under the block cursor. */
+	cursorText: string;
+	selection: string;
+	/** ANSI 0-15, in order. */
+	ansi: readonly [
+		string, string, string, string, string, string, string, string,
+		string, string, string, string, string, string, string, string,
+	];
+};
+
 export type ThemePalette = {
 	/** Main canvas. */
 	bg: string;
@@ -30,6 +43,8 @@ export type ThemePalette = {
 	blue: string;
 	purple: string;
 	cyan: string;
+	/** Desktop only: replaces the terminal colors derived from the roles above. */
+	terminal?: TerminalPalette;
 };
 
 export type ThemeDefinition = {
@@ -371,6 +386,37 @@ export const THEMES = [
 			text: "#100f0f", muted: "#6f6e69", accent: "#bc5215",
 			red: "#af3029", orange: "#bc5215", yellow: "#ad8301", green: "#66800b",
 			blue: "#205ea6", purple: "#5e409d", cyan: "#24837b",
+		},
+	},
+	{
+		// LADO fork: the owner's Ghostty themes (dotfiles ghostty/themes/terminal-look-*).
+		id: "terminal-look",
+		label: "Terminal Look",
+		dark: {
+			bg: "#1e1e1e", sidebar: "#181818", panel: "#252526", element: "#333334",
+			text: "#cccccc", muted: "#969896", accent: "#81a2be",
+			red: "#cc6666", orange: "#de935f", yellow: "#f0c674", green: "#b5bd68",
+			blue: "#81a2be", purple: "#b294bb", cyan: "#8abeb7",
+			terminal: {
+				cursor: "#aeafad", cursorText: "#111111", selection: "#264f78",
+				ansi: [
+					"#000000", "#cc6666", "#b5bd68", "#f0c674", "#81a2be", "#b294bb", "#8abeb7", "#c5c8c6",
+					"#969896", "#cc6666", "#b5bd68", "#f0c674", "#81a2be", "#b294bb", "#8abeb7", "#e0e0e0",
+				],
+			},
+		},
+		light: {
+			bg: "#ffffff", sidebar: "#f6f8fa", panel: "#f6f8fa", element: "#eaeef2",
+			text: "#24292e", muted: "#6a737d", accent: "#0366d6",
+			red: "#d73a49", orange: "#bc4c00", yellow: "#9a6700", green: "#1a7f37",
+			blue: "#0366d6", purple: "#5a32a3", cyan: "#1b7c83",
+			terminal: {
+				cursor: "#044289", cursorText: "#ffffff", selection: "#dae9f9",
+				ansi: [
+					"#24292e", "#d73a49", "#1a7f37", "#9a6700", "#0366d6", "#5a32a3", "#1b7c83", "#6a737d",
+					"#6e7781", "#cb2431", "#22863a", "#b08800", "#005cc5", "#5a32a3", "#3192aa", "#d1d5da",
+				],
+			},
 		},
 	},
 ] as const satisfies readonly ThemeDefinition[];

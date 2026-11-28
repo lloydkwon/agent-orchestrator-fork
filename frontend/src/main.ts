@@ -191,6 +191,7 @@ import {
 	shouldSignalAttention,
 	shouldToast,
 	toastSilent,
+	toastUrgency,
 } from "./main/notification-signals";
 import { buildLinuxAppMenuTemplate, buildMacAppMenuTemplate, buildWindowsAppMenuTemplate } from "./main/menu";
 import { ancestorRepositorySetupWarning, resolveCheckedOutBranch, scanImportFolder } from "./main/import-folder-scan";
@@ -337,7 +338,8 @@ let daemonStartEpoch = 0;
 let daemonStatus: DaemonStatus = { state: "stopped" };
 const awakeDownloads = createAwakeDownloadBridge({
  baseURL: () => daemonStatus.state === "ready" && daemonStatus.port ? `http://127.0.0.1:${daemonStatus.port}` : null,
- request: (url, init) => net.fetch(url, init),
+ // Electron net.fetch adds browser metadata without Origin, which the daemon rejects.
+ request: (url, init) => fetch(url, init),
 });
 app.once("will-quit", () => awakeDownloads.dispose());
 
@@ -1208,7 +1210,8 @@ async function fetchDesktopSessionPath(
 	const controller = new AbortController();
 	const timer = setTimeout(() => controller.abort(), DAEMON_PROBE_TIMEOUT_MS);
 	try {
-		const response = await net.fetch(
+		// Electron net.fetch adds browser metadata without Origin, which the daemon rejects.
+		const response = await fetch(
 			`http://127.0.0.1:${daemonStatus.port}/api/v1/desktop/sessions/${encodeURIComponent(sessionId)}/${route}`,
 			{ signal: controller.signal },
 		).catch((error: unknown) => {
@@ -1530,7 +1533,8 @@ async function readDaemonProbe(port: number, endpoint: "healthz" | "readyz"): Pr
 	const controller = new AbortController();
 	const timer = setTimeout(() => controller.abort(), DAEMON_PROBE_TIMEOUT_MS);
 	try {
-		const response = await net.fetch(`http://127.0.0.1:${port}/${endpoint}`, { signal: controller.signal });
+		// Electron net.fetch adds browser metadata without Origin, which the daemon rejects.
+		const response = await fetch(`http://127.0.0.1:${port}/${endpoint}`, { signal: controller.signal });
 		if (!response.ok) return null;
 		return parseDaemonProbe(endpoint, await response.json());
 	} catch {
@@ -2850,7 +2854,8 @@ registerLadoDesktopIpc(ipcMain, ladoDesktop);
 registerLadoPresenceIpc({
 	ipcMain,
 	dialog,
-	fetch: (url, init) => net.fetch(url, init),
+	// Electron net.fetch adds browser metadata without Origin, which the daemon rejects.
+	fetch: (url, init) => fetch(url, init),
 	token: () => browserRuntimeToken,
 	daemonBaseUrl: () => daemonStatus.state === "ready" && daemonStatus.port ? `http://127.0.0.1:${daemonStatus.port}` : null,
 	parentWindow: () => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null),
@@ -2987,6 +2992,9 @@ ipcMain.handle(
 				// sound notifications off. Honoured on macOS/Windows only; Linux
 				// notification daemons ignore it (see toastSilent).
 				silent: toastSilent(process.platform, soundNotificationsEnabled, playsSound),
+				// LADO fork: critical for the types the user must see, so GNOME's Do
+				// Not Disturb still shows their banner (see toastUrgency).
+				urgency: toastUrgency(process.platform, notification.type),
 				// AO logo as the notification icon on Windows/Linux. Omitted on macOS,
 				// where a custom icon renders only as a redundant right-side content image —
 				// macOS uses the app-bundle icon (the AO logo in a packaged build) as the
@@ -3308,7 +3316,8 @@ app.whenReady().then(async () => {
 	agentSwitchVisibilityController = new AgentSwitchVisibilityController({ send: async () => undefined, killSwitched: visibilityKillSwitched, diagnostic: (code) => console.warn("agent switch visibility diagnostic:", code) });
 	for (const shellContents of trustedShellWebContents.values()) agentSwitchVisibilityController.registerWindow(shellContents.id);
 	const authority = new TelemetryPolicyAuthority({ dataDir: desktopDataDir, packagedDefault: app.isPackaged, platform: process.platform });
-	const daemonPolicy = new DaemonTelemetryPolicyClient(() => daemonStatus.state === "ready" && daemonStatus.port ? `http://127.0.0.1:${daemonStatus.port}` : null, (url, init) => net.fetch(url, init));
+	// Electron net.fetch adds browser metadata without Origin, which the daemon rejects.
+	const daemonPolicy = new DaemonTelemetryPolicyClient(() => daemonStatus.state === "ready" && daemonStatus.port ? `http://127.0.0.1:${daemonStatus.port}` : null, (url, init) => fetch(url, init));
 	const policyController = new DesktopTelemetryController({
 		authority,
 		daemon: daemonPolicy,

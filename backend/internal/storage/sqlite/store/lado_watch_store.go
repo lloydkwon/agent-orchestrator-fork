@@ -54,6 +54,10 @@ func (s *Store) LadoWatchSettings(ctx context.Context, scope domain.ProjectID) (
 		v := row.WakeEnabled.Int64 != 0
 		o.WakeEnabled = &v
 	}
+	if row.AwaitMinutes.Valid {
+		v := int(row.AwaitMinutes.Int64)
+		o.AwaitMinutes = &v
+	}
 	return o, true, nil
 }
 
@@ -97,6 +101,7 @@ func (s *Store) PutLadoWatchSettings(ctx context.Context, scope domain.ProjectID
 		SessionCompactions: nullInt(o.SessionCompactions),
 		StallMinutes:       nullInt(o.StallMinutes),
 		WakeEnabled:        wake,
+		AwaitMinutes:       nullInt(o.AwaitMinutes),
 		UpdatedAt:          updated.UTC(),
 	}); err != nil {
 		return fmt.Errorf("store LADO watch settings: %w", err)

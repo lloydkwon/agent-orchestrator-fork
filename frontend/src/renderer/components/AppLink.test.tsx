@@ -9,13 +9,14 @@ const url = "https://github.com/aoagents/agent-orchestrator/pull/42";
 afterEach(() => vi.restoreAllMocks());
 
 describe("AppLink", () => {
+	// LADO fork (TDD §11): 내장 패널은 수정키 클릭으로 연다.
 	it("opens PR links in ao even when the product link stops propagation", () => {
 		const open = vi.fn();
 		const external = vi.spyOn(aoBridge.app, "openExternal").mockResolvedValue(undefined);
 		render(<AppBrowserLinkContext.Provider value={open}>
 			<ProductExternalLink href={url} stopPropagation>PR #42</ProductExternalLink>
 		</AppBrowserLinkContext.Provider>);
-		fireEvent.click(screen.getByRole("link"));
+		fireEvent.click(screen.getByRole("link"), { altKey: true });
 		expect(open).toHaveBeenCalledExactlyOnceWith(url);
 		expect(external).not.toHaveBeenCalled();
 	});

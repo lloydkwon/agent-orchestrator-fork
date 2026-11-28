@@ -49,6 +49,7 @@ Facts at `55b02b848`:
 **Also:**
 
 - `/api/v1/lado/` is blocked on the LAN listener. There is no mobile approval until mobile has a presence mechanism.
+  - Amended 2026-11-24 by [adr/0014](0014-phone-passkey-approvals.md): plans and integrations can be approved on the phone with a passkey enrolled from the desktop app, through `tailscale serve` to a Unix socket; the LAN block stays.
 - The CLI gets no approval commands.
 - `dev:web` (renderer in a browser, no Electron main) has no presence. Approvals there need `AO_LADO_DEV_PRESENCE=1` and are labelled dev-only.
 

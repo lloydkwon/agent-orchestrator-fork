@@ -446,6 +446,7 @@ func insertLadoPresenceProof(ctx context.Context, q *gen.Queries, proof domain.L
 		Action:    proof.Action,
 		SubjectID: proof.SubjectID,
 		Dev:       dev,
+		Via:       proof.Via,
 		ExpiresAt: proof.ExpiresAt.UTC(),
 		UsedAt:    proof.UsedAt.UTC(),
 	})

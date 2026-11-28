@@ -70,6 +70,10 @@ export function ladoAlertText(t: TFunction, alert: LadoAlert, locale: string): s
 			return t("lado.alert.agentUnavailable");
 		case "conflict_unresolved":
 			return t("lado.alert.conflictUnresolved", { count: alert.value });
+		case "background_overdue":
+			return t("lado.alert.backgroundOverdue", { minutes: alert.value });
+		case "restart_resumed":
+			return t("lado.alert.restartResumed");
 		default:
 			// A kind from a newer daemon: its own line.
 			return alert.line;

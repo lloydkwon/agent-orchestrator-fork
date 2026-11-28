@@ -10,6 +10,8 @@ import {
 	LADO_PRESENCE_CHANGE_PROJECT_CHECKS_CHANNEL,
 	LADO_PRESENCE_CHANGE_RULE_CHANNEL,
 	LADO_PRESENCE_CHANGE_SETUP_CHANNEL,
+	LADO_PRESENCE_ENABLE_PHONE_APPROVAL_CHANNEL,
+	LADO_PRESENCE_ENROLL_PHONE_PASSKEY_CHANNEL,
 	LADO_PRESENCE_RESTORE_SETUP_CHANNEL,
 	LADO_PRESENCE_SET_LADO_MODE_CHANNEL,
 	type LadoCeilingMode,
@@ -27,6 +29,9 @@ import {
 	type LadoPresenceIntegrationResult,
 	type LadoPresenceModeRequest,
 	type LadoPresenceModeResult,
+	type LadoPresencePhoneApprovalResult,
+	type LadoPresencePhonePasskeyRequest,
+	type LadoPresencePhonePasskeyResult,
 	type LadoPresenceRestoreSetupResult,
 	type LadoPresenceRuleChangeRequest,
 	type LadoPresenceRuleChangeResult,
@@ -897,6 +902,15 @@ const api = {
 					prUrl: request.prUrl,
 					phase: request.phase,
 				} satisfies LadoPresenceApplyDbChangesRequest) as Promise<LadoPresenceApplyDbChangesResult | null>,
+			// Turning phone approval on, and the code a phone shows to enroll its
+			// passkey (docs/LJY-PRD/adr/0014-phone-passkey-approvals.md); only the
+			// code crosses.
+			enablePhoneApproval: () =>
+				ipcRenderer.invoke(LADO_PRESENCE_ENABLE_PHONE_APPROVAL_CHANNEL, {}) as Promise<LadoPresencePhoneApprovalResult | null>,
+			enrollPhonePasskey: (code: string) =>
+				ipcRenderer.invoke(LADO_PRESENCE_ENROLL_PHONE_PASSKEY_CHANNEL, {
+					code,
+				} satisfies LadoPresencePhonePasskeyRequest) as Promise<LadoPresencePhonePasskeyResult | null>,
 		},
 	},
 };

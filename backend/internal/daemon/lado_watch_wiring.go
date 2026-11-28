@@ -17,10 +17,13 @@ import (
 	codexagent "github.com/aoagents/agent-orchestrator/backend/internal/adapters/agent/codex"
 	"github.com/aoagents/agent-orchestrator/backend/internal/config"
 	"github.com/aoagents/agent-orchestrator/backend/internal/domain"
+	"github.com/aoagents/agent-orchestrator/backend/internal/notify"
 	"github.com/aoagents/agent-orchestrator/backend/internal/ports"
 	reviewcore "github.com/aoagents/agent-orchestrator/backend/internal/review"
 	"github.com/aoagents/agent-orchestrator/backend/internal/service/agentaccounts"
+	chatsvc "github.com/aoagents/agent-orchestrator/backend/internal/service/chat"
 	"github.com/aoagents/agent-orchestrator/backend/internal/service/ladoalert"
+	"github.com/aoagents/agent-orchestrator/backend/internal/service/ladobackground"
 	"github.com/aoagents/agent-orchestrator/backend/internal/service/ladolaunch"
 	"github.com/aoagents/agent-orchestrator/backend/internal/service/ladotask"
 	"github.com/aoagents/agent-orchestrator/backend/internal/service/ladousage"
@@ -55,6 +58,11 @@ var (
 	// limit lifts once the developer logs in to another account (issue #92).
 	_ ladowatch.Accounts   = (*agentaccounts.Service)(nil)
 	_ ladowatch.Identities = (*agentaccounts.Service)(nil)
+	// AO's notification writer tells the owner a worker waits on them.
+	_ ladowatch.Notifier = (*notify.Manager)(nil)
+	// Chat controllers record a session's background tasks in the store, and
+	// the watch reads them (LADO fork, 2026-11-27).
+	_ chatsvc.BackgroundTaskWriter = (*sqlite.Store)(nil)
 )
 
 // ladoWatchServices are the worker watch's services.
@@ -79,7 +87,8 @@ type ladoWatchHooks struct {
 // installs their launch hooks. accounts tells a session's agent account and
 // sender delivers the wake messages; without them the watch takes every
 // session to run on the computer's login, and only records and alerts.
-func wireLadoWatch(cfg config.Config, store *sqlite.Store, hooks ladoWatchHooks, accounts ladowatch.Accounts, sender ladoMessageSender, log *slog.Logger) ladoWatchServices {
+// notifier tells the owner a worker waits on them; nil tells nothing.
+func wireLadoWatch(cfg config.Config, store *sqlite.Store, hooks ladoWatchHooks, accounts ladowatch.Accounts, sender ladoMessageSender, notifier ladowatch.Notifier, log *slog.Logger) ladoWatchServices {
 	launch := ladolaunch.New(ladolaunch.Options{DataDir: cfg.DataDir, Store: store, Projects: store, Log: log})
 	usage := ladousage.New(ladousage.Deps{Store: store, Usage: usagesvc.NewSummaryReader(store), Log: log})
 	deps := ladowatch.Deps{
@@ -96,6 +105,12 @@ func wireLadoWatch(cfg config.Config, store *sqlite.Store, hooks ladoWatchHooks,
 	if sender != nil {
 		deps.Messenger = ladoWakeMessenger{sender: sender}
 	}
+	if notifier != nil {
+		deps.Notifier = notifier
+	}
+	// A worker whose bridge predates AO's background-task report is read
+	// from its conversation file and the process table (LADO fork).
+	deps.Background = ladobackground.New(ladobackground.Deps{Store: store, Shells: &ladobackground.ProcShells{}, Log: log})
 	watch := ladowatch.New(deps)
 	alerts := ladoalert.New(ladoalert.Deps{Store: store, Usage: usage, Log: log})
 

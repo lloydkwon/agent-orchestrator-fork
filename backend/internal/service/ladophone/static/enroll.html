@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>LADO 폰 등록</title>
+<link rel="stylesheet" href="/enroll.css">
+<script src="/webauthn.js" defer></script>
+<script src="/enroll.js" defer></script>
+</head>
+<body>
+<main>
+<h1>LADO 폰 승인 등록</h1>
+<p>데스크톱 앱에서 «폰 등록 시작»을 누른 뒤 10분 안에 아래 버튼을 누르세요. Face ID 나 지문으로 이 폰에 패스키를 만듭니다.</p>
+<button id="start" type="button" disabled>패스키 만들기</button>
+<p id="msg" role="status" aria-live="polite"></p>
+<section id="result" hidden>
+<p>데스크톱 앱에 이 코드를 넣으세요. 코드는 이 화면에만 나옵니다.</p>
+<p id="code" class="code"></p>
+<p>지문: <span id="fingerprint" class="fingerprint"></span></p>
+<p>데스크톱 확인창의 지문이 이것과 같을 때만 승인하세요.</p>
+</section>
+</main>
+</body>
+</html>

@@ -51,6 +51,7 @@ import (
 	"github.com/aoagents/agent-orchestrator/backend/internal/preview"
 	"github.com/aoagents/agent-orchestrator/backend/internal/previewserver"
 	"github.com/aoagents/agent-orchestrator/backend/internal/push"
+	"github.com/aoagents/agent-orchestrator/backend/internal/push/ntfy"
 	"github.com/aoagents/agent-orchestrator/backend/internal/runfile"
 	agentsvc "github.com/aoagents/agent-orchestrator/backend/internal/service/agent"
 	"github.com/aoagents/agent-orchestrator/backend/internal/service/agentaccounts"
@@ -700,8 +701,11 @@ func Run() error {
 	// tasks track their issues until shutdown (docs/LJY-PRD/TDD.md §5.1).
 	lado := wireLadoWork(ctx, cfg, store, projectSvc, ladoWorkDeps{sender: sessMgr, artifacts: lcStack.ArtifactVersions, sessions: sessionSvc, branches: sessMgr, memory: memoryReader,
 		setup: ladoSetupDeps{folders: ladoFolders, sessions: sessMgr, agents: agents, knowledge: ladoKnowledge}, reviews: reviewSvc, ladoModes: ladoProjects,
-		accounts: agentAccountSvc, preflight: agentSvc, claims: sessionSvc}, log)
+		accounts: agentAccountSvc, preflight: agentSvc, claims: sessionSvc, notifier: notificationWriter}, log)
 	ladoConnections, ladoTasks, ladoRules, ladoQueue, ladoSetup, ladoVerify := lado.connections, lado.tasks, lado.rules, lado.queue, lado.setup, lado.verify
+	// LADO fork: sessions a reboot stopped start again at the startup health
+	// pass below (lado_startup_restore_wiring.go).
+	wireLadoStartupRestore(sessMgr, ladoQueue, lado.watch.watch, lcStack.LCM, log)
 	ladoTasksDone := ladoTasks.Start(ctx)
 	ladoSetupDone := startLadoSetup(ctx, ladoSetup, log)
 	reportSessions, ok := sessMgr.(reportSemanticSession)
@@ -1006,6 +1010,14 @@ func Run() error {
 		dispatcher := push.NewDispatcher(notificationHub, pushDevices, push.NewExpoClient(os.Getenv("EXPO_ACCESS_TOKEN")), hostIdentity.HostID, log)
 		go dispatcher.Run(ctx)
 	}
+	// LADO fork (2026-11-27): what needs the owner also goes to their ntfy
+	// topic when <data dir>/ntfy.json names one. Without the file nothing
+	// goes; a file that is wrong is logged and leaves it off.
+	if ntfyCfg, ok, err := ntfy.LoadConfig(cfg.DataDir); err != nil {
+		log.Warn("ntfy push is off: its config is wrong", "error", err)
+	} else if ok {
+		go ntfy.New(ntfyCfg, ntfy.Deps{Alerts: store, Tasks: store, Log: log}).Run(ctx, notificationHub)
+	}
 	if mobilebridge.KeepAwakeSupported() {
 		ka := mobilebridge.NewKeepAwake(os.Getpid())
 		ka.SetLidController(mobilebridge.NewLidAwake(os.Getpid(), os.Getenv("AO_WAKE_HELPER"), cfg.DataDir))
@@ -1028,6 +1040,7 @@ func Run() error {
 		nativeSessions, _ = codewhaleAgent.(ports.AgentNativeSessionResolver)
 	}
 
+	ladoPhone := wireLadoPhone(cfg, store, ladoPhoneDeps{tasks: ladoTasks, rules: ladoRules, executions: ladoQueue, integrations: ladoVerify}, log) // LADO fork
 	srv, err := httpd.NewWithDeps(cfg, log, termMgr, httpd.APIDeps{
 		Awake:              awakeSvc,
 		Projects:           projectSvc,
@@ -1070,7 +1083,9 @@ func Run() error {
 		LadoRelay:          lado.relay,
 		LadoLogWatch:       ladoLogWatch,
 		LadoAccountLimits:  lado.watch.watch,
+		LadoBackground:     store,
 		LadoDBChanges:      ladoDBChanges,
+		LadoPhone:          ladoPhone,
 		LadoPresence:       newLadoPresence(browserRuntimeToken, os.Getenv(browserruntime.RuntimeTokenStdinEnv) == "1", log),
 		AgentAuth:          agentAuthSvc,
 		GitHub:             newGitHubStatusService(githubpat.New(cfg.DataDir), prReader),
@@ -1141,6 +1156,8 @@ func Run() error {
 	if err := restoreMobileOnBoot(mobilebridge.Path(cfg.DataDir), bs); err != nil {
 		log.Warn("restore mobile bridge on boot failed", "err", err)
 	}
+	ladoPhoneDone := startLadoPhone(ctx, ladoPhone, log) // LADO fork: reopens phone approval left on
+	defer stopLadoPhone(ladoPhone, ladoPhoneDone)
 	go runRemoteHostAddressPublisher(ctx, bs, cfg.CloudControlPlaneURL, log)
 
 	if usagePipeline != nil {

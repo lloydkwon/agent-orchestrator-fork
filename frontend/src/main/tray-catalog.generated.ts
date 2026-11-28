@@ -147,7 +147,15 @@ export const TRAY_MESSAGE_KEYS = [
 	"lado.presence.integration.dbUnplanned",
 	"lado.presence.integration.nextDbChanges",
 	"lado.presence.integration.nextDbChangesMany",
-	"lado.presence.integration.nextAfterDeploy"
+	"lado.presence.integration.nextAfterDeploy",
+	"lado.presence.phone.enableTitle",
+	"lado.presence.phone.enableDetail",
+	"lado.presence.phone.enableAddressUnknown",
+	"lado.presence.phone.turnOn",
+	"lado.presence.phone.enrollTitle",
+	"lado.presence.phone.enrollDetail",
+	"lado.presence.phone.deviceUnknown",
+	"lado.presence.phone.enroll"
 ] as const;
 
 export type TrayMessageKey = (typeof TRAY_MESSAGE_KEYS)[number];
@@ -299,7 +307,15 @@ export const trayCatalogs: Record<AppLocale, Record<TrayMessageKey, string>> = {
 		"lado.presence.integration.dbUnplanned": "Adds SQL files, but the plan's change kinds do not name db_schema.",
 		"lado.presence.integration.nextDbChanges": "On approval, LADO checks that the pull request can merge, applies the pre-merge SQL in path order, posts lado/integration, and then merges it itself. If a file fails, LADO does not merge.",
 		"lado.presence.integration.nextDbChangesMany": "On approval, LADO checks that each pull request can merge, applies its pre-merge SQL in path order, posts lado/integration, and then merges them itself in the order listed. If a file fails, LADO does not merge.",
-		"lado.presence.integration.nextAfterDeploy": "After-deploy SQL waits after the merge until you apply it from the app."
+		"lado.presence.integration.nextAfterDeploy": "After-deploy SQL waits after the merge until you apply it from the app.",
+		"lado.presence.phone.enableTitle": "Turn on phone approval?",
+		"lado.presence.phone.enableDetail": "Plans and integrations can then be approved on your phone at {{address}} on your tailnet. Only a passkey you enroll in this app can approve, and each approval asks for it again.\n\nIntegrations that apply SQL to a production database, rules and settings still need this app.",
+		"lado.presence.phone.enableAddressUnknown": "this computer's tailnet name, port {{port}}",
+		"lado.presence.phone.turnOn": "Turn on",
+		"lado.presence.phone.enrollTitle": "Enroll this phone's passkey?",
+		"lado.presence.phone.enrollDetail": "Device: {{device}}\nTailnet login: {{login}}\nMade: {{time}}\nFingerprint: {{fingerprint}}\n\nCheck that the phone shows the same fingerprint. Once enrolled, this passkey can approve plans and integrations.",
+		"lado.presence.phone.deviceUnknown": "Unknown device",
+		"lado.presence.phone.enroll": "Enroll"
 	},
 	"zh-CN": {
 		"tray.untitledSession": "未命名会话",
@@ -447,7 +463,15 @@ export const trayCatalogs: Record<AppLocale, Record<TrayMessageKey, string>> = {
 		"lado.presence.integration.dbUnplanned": "添加了 SQL 文件，但计划的 change_kinds 中没有 db_schema。",
 		"lado.presence.integration.nextDbChanges": "批准后，LADO 会检查拉取请求能否合并，按路径顺序应用合并前 SQL，发布 lado/integration，然后自行合并。任一文件失败，LADO 就不合并。",
 		"lado.presence.integration.nextDbChangesMany": "批准后，LADO 会检查每个拉取请求能否合并，按路径顺序应用其合并前 SQL，发布 lado/integration，然后按列出的顺序自行合并。任一文件失败，LADO 就不合并。",
-		"lado.presence.integration.nextAfterDeploy": "部署后 SQL 会在合并后等待，直到你在应用中应用它。"
+		"lado.presence.integration.nextAfterDeploy": "部署后 SQL 会在合并后等待，直到你在应用中应用它。",
+		"lado.presence.phone.enableTitle": "Turn on phone approval?",
+		"lado.presence.phone.enableDetail": "Plans and integrations can then be approved on your phone at {{address}} on your tailnet. Only a passkey you enroll in this app can approve, and each approval asks for it again.\n\nIntegrations that apply SQL to a production database, rules and settings still need this app.",
+		"lado.presence.phone.enableAddressUnknown": "this computer's tailnet name, port {{port}}",
+		"lado.presence.phone.turnOn": "Turn on",
+		"lado.presence.phone.enrollTitle": "Enroll this phone's passkey?",
+		"lado.presence.phone.enrollDetail": "Device: {{device}}\nTailnet login: {{login}}\nMade: {{time}}\nFingerprint: {{fingerprint}}\n\nCheck that the phone shows the same fingerprint. Once enrolled, this passkey can approve plans and integrations.",
+		"lado.presence.phone.deviceUnknown": "Unknown device",
+		"lado.presence.phone.enroll": "Enroll"
 	},
 	"ja": {
 		"tray.untitledSession": "無題のセッション",
@@ -595,7 +619,15 @@ export const trayCatalogs: Record<AppLocale, Record<TrayMessageKey, string>> = {
 		"lado.presence.integration.dbUnplanned": "SQL ファイルを追加していますが、計画の change_kinds に db_schema がありません。",
 		"lado.presence.integration.nextDbChanges": "承認すると、LADO はプルリクエストをマージできるか確認し、マージ前の SQL をパス順に適用して lado/integration を投稿し、自らマージします。ファイルが 1 つでも失敗するとマージしません。",
 		"lado.presence.integration.nextDbChangesMany": "承認すると、LADO は各プルリクエストをマージできるか確認し、マージ前の SQL をパス順に適用して lado/integration を投稿し、記載順に自らマージします。ファイルが 1 つでも失敗するとマージしません。",
-		"lado.presence.integration.nextAfterDeploy": "デプロイ後の SQL は、マージ後にアプリから適用するまで待機します。"
+		"lado.presence.integration.nextAfterDeploy": "デプロイ後の SQL は、マージ後にアプリから適用するまで待機します。",
+		"lado.presence.phone.enableTitle": "Turn on phone approval?",
+		"lado.presence.phone.enableDetail": "Plans and integrations can then be approved on your phone at {{address}} on your tailnet. Only a passkey you enroll in this app can approve, and each approval asks for it again.\n\nIntegrations that apply SQL to a production database, rules and settings still need this app.",
+		"lado.presence.phone.enableAddressUnknown": "this computer's tailnet name, port {{port}}",
+		"lado.presence.phone.turnOn": "Turn on",
+		"lado.presence.phone.enrollTitle": "Enroll this phone's passkey?",
+		"lado.presence.phone.enrollDetail": "Device: {{device}}\nTailnet login: {{login}}\nMade: {{time}}\nFingerprint: {{fingerprint}}\n\nCheck that the phone shows the same fingerprint. Once enrolled, this passkey can approve plans and integrations.",
+		"lado.presence.phone.deviceUnknown": "Unknown device",
+		"lado.presence.phone.enroll": "Enroll"
 	},
 	"ko": {
 		"tray.untitledSession": "제목 없는 세션",
@@ -743,7 +775,15 @@ export const trayCatalogs: Record<AppLocale, Record<TrayMessageKey, string>> = {
 		"lado.presence.integration.dbUnplanned": "SQL 파일을 더하지만 계획의 change_kinds에 db_schema가 없습니다.",
 		"lado.presence.integration.nextDbChanges": "승인하면 LADO가 PR을 병합할 수 있는지 확인하고, 병합 전 SQL을 경로 순서로 적용한 뒤 lado/integration을 게시하고 직접 병합합니다. 파일 하나라도 실패하면 병합하지 않습니다.",
 		"lado.presence.integration.nextDbChangesMany": "승인하면 LADO가 각 PR을 병합할 수 있는지 확인하고, 병합 전 SQL을 경로 순서로 적용한 뒤 lado/integration을 게시하고 적힌 순서대로 직접 병합합니다. 파일 하나라도 실패하면 병합하지 않습니다.",
-		"lado.presence.integration.nextAfterDeploy": "배포 뒤 SQL은 병합 뒤 앱에서 적용할 때까지 기다립니다."
+		"lado.presence.integration.nextAfterDeploy": "배포 뒤 SQL은 병합 뒤 앱에서 적용할 때까지 기다립니다.",
+		"lado.presence.phone.enableTitle": "폰 승인을 켤까요?",
+		"lado.presence.phone.enableDetail": "켜면 tailnet 의 {{address}} 에서 폰으로 계획·통합을 승인할 수 있습니다. 이 앱에서 등록한 패스키로만 승인되고, 승인할 때마다 패스키를 다시 묻습니다.\n\n운영 DB SQL 이 따르는 통합, 규칙·설정 변경은 계속 이 앱에서만 합니다.",
+		"lado.presence.phone.enableAddressUnknown": "이 컴퓨터의 tailnet 이름, 포트 {{port}}",
+		"lado.presence.phone.turnOn": "켜기",
+		"lado.presence.phone.enrollTitle": "이 폰의 패스키를 등록할까요?",
+		"lado.presence.phone.enrollDetail": "기기: {{device}}\ntailnet 로그인: {{login}}\n만든 시각: {{time}}\n지문: {{fingerprint}}\n\n폰에 뜬 지문과 같은지 확인하세요. 등록하면 이 패스키로 계획·통합을 승인할 수 있습니다.",
+		"lado.presence.phone.deviceUnknown": "알 수 없는 기기",
+		"lado.presence.phone.enroll": "등록"
 	},
 	"es": {
 		"tray.untitledSession": "Sesión sin título",
@@ -891,7 +931,15 @@ export const trayCatalogs: Record<AppLocale, Record<TrayMessageKey, string>> = {
 		"lado.presence.integration.dbUnplanned": "Añade archivos SQL, pero los change_kinds del plan no incluyen db_schema.",
 		"lado.presence.integration.nextDbChanges": "Al aprobar, LADO comprueba que la pull request se pueda fusionar, aplica el SQL previo a la fusión en orden de ruta, publica lado/integration y luego la fusiona por sí mismo. Si un archivo falla, LADO no fusiona.",
 		"lado.presence.integration.nextDbChangesMany": "Al aprobar, LADO comprueba que cada pull request se pueda fusionar, aplica su SQL previo a la fusión en orden de ruta, publica lado/integration y luego las fusiona por sí mismo en el orden indicado. Si un archivo falla, LADO no fusiona.",
-		"lado.presence.integration.nextAfterDeploy": "El SQL posterior al despliegue espera tras la fusión hasta que lo apliques desde la app."
+		"lado.presence.integration.nextAfterDeploy": "El SQL posterior al despliegue espera tras la fusión hasta que lo apliques desde la app.",
+		"lado.presence.phone.enableTitle": "Turn on phone approval?",
+		"lado.presence.phone.enableDetail": "Plans and integrations can then be approved on your phone at {{address}} on your tailnet. Only a passkey you enroll in this app can approve, and each approval asks for it again.\n\nIntegrations that apply SQL to a production database, rules and settings still need this app.",
+		"lado.presence.phone.enableAddressUnknown": "this computer's tailnet name, port {{port}}",
+		"lado.presence.phone.turnOn": "Turn on",
+		"lado.presence.phone.enrollTitle": "Enroll this phone's passkey?",
+		"lado.presence.phone.enrollDetail": "Device: {{device}}\nTailnet login: {{login}}\nMade: {{time}}\nFingerprint: {{fingerprint}}\n\nCheck that the phone shows the same fingerprint. Once enrolled, this passkey can approve plans and integrations.",
+		"lado.presence.phone.deviceUnknown": "Unknown device",
+		"lado.presence.phone.enroll": "Enroll"
 	},
 	"fr": {
 		"tray.untitledSession": "Session sans titre",
@@ -1039,7 +1087,15 @@ export const trayCatalogs: Record<AppLocale, Record<TrayMessageKey, string>> = {
 		"lado.presence.integration.dbUnplanned": "Ajoute des fichiers SQL, mais les change_kinds du plan ne mentionnent pas db_schema.",
 		"lado.presence.integration.nextDbChanges": "À l'approbation, LADO vérifie que la pull request peut être fusionnée, applique le SQL d'avant fusion dans l'ordre des chemins, publie lado/integration, puis la fusionne lui-même. Si un fichier échoue, LADO ne fusionne pas.",
 		"lado.presence.integration.nextDbChangesMany": "À l'approbation, LADO vérifie que chaque pull request peut être fusionnée, applique son SQL d'avant fusion dans l'ordre des chemins, publie lado/integration, puis les fusionne lui-même dans l'ordre indiqué. Si un fichier échoue, LADO ne fusionne pas.",
-		"lado.presence.integration.nextAfterDeploy": "Le SQL d'après déploiement attend après la fusion jusqu'à ce que vous l'appliquiez depuis l'app."
+		"lado.presence.integration.nextAfterDeploy": "Le SQL d'après déploiement attend après la fusion jusqu'à ce que vous l'appliquiez depuis l'app.",
+		"lado.presence.phone.enableTitle": "Turn on phone approval?",
+		"lado.presence.phone.enableDetail": "Plans and integrations can then be approved on your phone at {{address}} on your tailnet. Only a passkey you enroll in this app can approve, and each approval asks for it again.\n\nIntegrations that apply SQL to a production database, rules and settings still need this app.",
+		"lado.presence.phone.enableAddressUnknown": "this computer's tailnet name, port {{port}}",
+		"lado.presence.phone.turnOn": "Turn on",
+		"lado.presence.phone.enrollTitle": "Enroll this phone's passkey?",
+		"lado.presence.phone.enrollDetail": "Device: {{device}}\nTailnet login: {{login}}\nMade: {{time}}\nFingerprint: {{fingerprint}}\n\nCheck that the phone shows the same fingerprint. Once enrolled, this passkey can approve plans and integrations.",
+		"lado.presence.phone.deviceUnknown": "Unknown device",
+		"lado.presence.phone.enroll": "Enroll"
 	},
 	"de": {
 		"tray.untitledSession": "Unbenannte Sitzung",
@@ -1187,7 +1243,15 @@ export const trayCatalogs: Record<AppLocale, Record<TrayMessageKey, string>> = {
 		"lado.presence.integration.dbUnplanned": "Fügt SQL-Dateien hinzu, aber die change_kinds des Plans nennen db_schema nicht.",
 		"lado.presence.integration.nextDbChanges": "Nach der Genehmigung prüft LADO, ob der Pull Request gemergt werden kann, wendet das SQL vor dem Merge in Pfadreihenfolge an, veröffentlicht lado/integration und merged ihn dann selbst. Schlägt eine Datei fehl, merged LADO nicht.",
 		"lado.presence.integration.nextDbChangesMany": "Nach der Genehmigung prüft LADO, ob jeder Pull Request gemergt werden kann, wendet sein SQL vor dem Merge in Pfadreihenfolge an, veröffentlicht lado/integration und merged sie dann selbst in der aufgeführten Reihenfolge. Schlägt eine Datei fehl, merged LADO nicht.",
-		"lado.presence.integration.nextAfterDeploy": "SQL nach dem Deployment wartet nach dem Merge, bis du es in der App anwendest."
+		"lado.presence.integration.nextAfterDeploy": "SQL nach dem Deployment wartet nach dem Merge, bis du es in der App anwendest.",
+		"lado.presence.phone.enableTitle": "Turn on phone approval?",
+		"lado.presence.phone.enableDetail": "Plans and integrations can then be approved on your phone at {{address}} on your tailnet. Only a passkey you enroll in this app can approve, and each approval asks for it again.\n\nIntegrations that apply SQL to a production database, rules and settings still need this app.",
+		"lado.presence.phone.enableAddressUnknown": "this computer's tailnet name, port {{port}}",
+		"lado.presence.phone.turnOn": "Turn on",
+		"lado.presence.phone.enrollTitle": "Enroll this phone's passkey?",
+		"lado.presence.phone.enrollDetail": "Device: {{device}}\nTailnet login: {{login}}\nMade: {{time}}\nFingerprint: {{fingerprint}}\n\nCheck that the phone shows the same fingerprint. Once enrolled, this passkey can approve plans and integrations.",
+		"lado.presence.phone.deviceUnknown": "Unknown device",
+		"lado.presence.phone.enroll": "Enroll"
 	},
 	"pt-BR": {
 		"tray.untitledSession": "Sessão sem título",
@@ -1335,6 +1399,14 @@ export const trayCatalogs: Record<AppLocale, Record<TrayMessageKey, string>> = {
 		"lado.presence.integration.dbUnplanned": "Adiciona arquivos SQL, mas os change_kinds do plano não incluem db_schema.",
 		"lado.presence.integration.nextDbChanges": "Ao aprovar, o LADO verifica se o pull request pode ser mesclado, aplica o SQL pré-merge na ordem dos caminhos, publica lado/integration e então faz o merge ele mesmo. Se um arquivo falhar, o LADO não faz o merge.",
 		"lado.presence.integration.nextDbChangesMany": "Ao aprovar, o LADO verifica se cada pull request pode ser mesclado, aplica o SQL pré-merge na ordem dos caminhos, publica lado/integration e então faz o merge deles ele mesmo na ordem listada. Se um arquivo falhar, o LADO não faz o merge.",
-		"lado.presence.integration.nextAfterDeploy": "O SQL pós-implantação aguarda após o merge até você aplicá-lo pelo app."
+		"lado.presence.integration.nextAfterDeploy": "O SQL pós-implantação aguarda após o merge até você aplicá-lo pelo app.",
+		"lado.presence.phone.enableTitle": "Turn on phone approval?",
+		"lado.presence.phone.enableDetail": "Plans and integrations can then be approved on your phone at {{address}} on your tailnet. Only a passkey you enroll in this app can approve, and each approval asks for it again.\n\nIntegrations that apply SQL to a production database, rules and settings still need this app.",
+		"lado.presence.phone.enableAddressUnknown": "this computer's tailnet name, port {{port}}",
+		"lado.presence.phone.turnOn": "Turn on",
+		"lado.presence.phone.enrollTitle": "Enroll this phone's passkey?",
+		"lado.presence.phone.enrollDetail": "Device: {{device}}\nTailnet login: {{login}}\nMade: {{time}}\nFingerprint: {{fingerprint}}\n\nCheck that the phone shows the same fingerprint. Once enrolled, this passkey can approve plans and integrations.",
+		"lado.presence.phone.deviceUnknown": "Unknown device",
+		"lado.presence.phone.enroll": "Enroll"
 	}
 };

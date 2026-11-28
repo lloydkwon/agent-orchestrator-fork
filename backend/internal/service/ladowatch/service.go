@@ -4,15 +4,16 @@
 // report and nudges it once, and tells the dispatcher and the plan workers
 // which accounts are at their limit, so no new worker starts on one.
 //
-// LADO sends a worker only its two fixed messages
-// (domain.LadoWakeLimitResumeText and domain.LadoWakeStallNudgeText), only
-// while the worker rests between turns, never in answer to a question it
+// LADO sends a worker only its three fixed messages
+// (domain.LadoWakeLimitResumeText, domain.LadoWakeStallNudgeText and, to a
+// worker the daemon started again after a reboot, domain.LadoWakeRestartResumeText,
+// restart.go), only while the worker rests between turns, never in answer to a question it
 // asked the owner, at most LadoWakeMaxResumes and LadoWakeMaxNudges times a
 // session, and only in a project that lets it. Every message is audited and
 // raises an alert.
 //
 // The daemon's one-minute watch loop runs Tick: the compaction counter first
-// (plan decision 10), then the limits, then the stalls.
+// (plan decision 10), then the limits, then the restarts, then the stalls.
 package ladowatch
 
 import (
@@ -35,8 +36,11 @@ type Store interface {
 	LiveLadoExecutions(ctx context.Context) ([]domain.LadoExecution, error)
 	LadoExecution(ctx context.Context, sessionID domain.SessionID) (domain.LadoExecution, bool, error)
 	LadoTask(ctx context.Context, id domain.LadoTaskID) (domain.LadoTask, bool, error)
-	LatestSessionReport(ctx context.Context, sessionID domain.SessionID) (domain.ReportState, string, bool, error)
+	LatestSessionReportAt(ctx context.Context, sessionID domain.SessionID) (domain.ReportState, time.Time, bool, error)
 	LadoEffectiveWatchSettings(ctx context.Context, project domain.ProjectID) (domain.LadoWatchSettings, error)
+	// LadoSessionBackground is what AO last heard of a session's live
+	// background tasks; ok is false when it does not know (LADO fork).
+	LadoSessionBackground(ctx context.Context, id domain.SessionID) (domain.SessionBackgroundTasks, bool, error)
 
 	EnsureLadoSessionWatch(ctx context.Context, session domain.SessionID, task domain.LadoTaskID, at time.Time) (bool, error)
 	LadoSessionWatch(ctx context.Context, session domain.SessionID) (domain.LadoSessionWatch, bool, error)
@@ -64,6 +68,13 @@ type Store interface {
 	// mode project's orchestrator when an account's limit holds and lifts.
 	ListLadoModeProjectIDs(ctx context.Context) ([]domain.ProjectID, error)
 	AddLadoOrchestratorNotice(ctx context.Context, n domain.LadoOrchestratorNotice) (bool, error)
+}
+
+// BackgroundReader reads a worker's live background work from its
+// conversation file and the process table, and records the reading
+// (*ladobackground.Reader); ok is false without a readable file.
+type BackgroundReader interface {
+	Read(ctx context.Context, id domain.SessionID, now time.Time) (domain.SessionBackgroundTasks, bool, error)
 }
 
 // Sessions reads AO's sessions: their agent, activity and whether they ended.
@@ -126,6 +137,11 @@ type Deps struct {
 	Messenger Messenger
 	// CompactCounter runs first on every tick; nil counts nothing.
 	CompactCounter CompactCounter
+	// Notifier tells the owner a worker waits on them; nil tells nothing.
+	Notifier Notifier
+	// Background reads a worker's background work from its conversation
+	// file when its bridge cannot report it; nil reads nothing.
+	Background BackgroundReader
 	// Clock stamps changes; nil uses time.Now.
 	Clock func() time.Time
 	// Local is the time zone a Codex reset time is read in; nil uses
@@ -141,6 +157,13 @@ type Service struct {
 	mu sync.Mutex
 	// checks is the last read of each limited key's login.
 	checks map[string]*identityCheck
+	// awaiting is the turn of each worker the owner was told waits on them,
+	// and visited the workers this process watched once.
+	awaiting map[domain.SessionID]string
+	visited  map[domain.SessionID]bool
+	// restarts are the workers the daemon started again at its start with
+	// their turn cut off, and when it did (restart.go).
+	restarts map[domain.SessionID]time.Time
 }
 
 // New returns a Service.
@@ -154,7 +177,10 @@ func New(deps Deps) *Service {
 	if deps.Log == nil {
 		deps.Log = slog.Default()
 	}
-	return &Service{deps: deps, checks: map[string]*identityCheck{}}
+	return &Service{
+		deps: deps, checks: map[string]*identityCheck{}, awaiting: map[domain.SessionID]string{}, visited: map[domain.SessionID]bool{},
+		restarts: map[domain.SessionID]time.Time{},
+	}
 }
 
 // Tick counts the compactions, releases the account limits whose reset
@@ -192,6 +218,7 @@ func (s *Service) Tick(ctx context.Context) error {
 			s.deps.Log.Warn("LADO could not watch a worker", "task", exec.TaskID, "session", exec.SessionID, "err", err)
 		}
 	}
+	s.expireRestarts(now)
 	return errors.Join(problems...)
 }
 
@@ -253,8 +280,12 @@ type worker struct {
 	lastTurn    domain.ConversationTurn
 	hasLastTurn bool
 	watch       domain.LadoSessionWatch
-	// report is the session's last report state, "" without one.
-	report domain.ReportState
+	// report is the session's last report state, "" without one, and
+	// reportAt when it was made.
+	report   domain.ReportState
+	reportAt time.Time
+	// background is the session's live background tasks, when AO knows them.
+	background domain.SessionBackgroundTasks
 }
 
 // resting reports whether the worker finished its turn and waits: AO shows it
@@ -269,6 +300,13 @@ func (w worker) resting() bool {
 	// A prompted turn that is not over yet, though asked for before a later
 	// provider turn, still waits to run.
 	return w.hasLastTurn && w.lastTurn.State.Terminal() && (!w.hasTurn || w.turn.State.Terminal())
+}
+
+// onBackground reports whether the worker rests on background work it
+// started (a background shell, Monitor or subagent still runs): it waits on
+// that work, not on its owner, and is not stalled.
+func (w worker) onBackground() bool {
+	return w.resting() && w.background.Running()
 }
 
 // ownerStopped reports whether the owner stopped the worker: its newest
@@ -296,6 +334,7 @@ func (s *Service) watch(ctx context.Context, pass *tickPass, exec domain.LadoExe
 		return fmt.Errorf("read the session: %w", err)
 	}
 	if !found || rec.IsTerminated || rec.Activity.State == domain.ActivityExited {
+		s.forgetAwaiting(ctx, exec.SessionID, now)
 		return nil
 	}
 	w := worker{exec: exec, session: rec}
@@ -306,12 +345,15 @@ func (s *Service) watch(ctx context.Context, pass *tickPass, exec domain.LadoExe
 		return err
 	}
 	s.readTurns(ctx, &w)
-	state, _, reported, err := s.deps.Store.LatestSessionReport(ctx, exec.SessionID)
+	state, reportAt, reported, err := s.deps.Store.LatestSessionReportAt(ctx, exec.SessionID)
 	if err != nil {
 		return fmt.Errorf("read the last report: %w", err)
 	}
 	if reported {
-		w.report = state
+		w.report, w.reportAt = state, reportAt
+	}
+	if err := s.readBackground(ctx, &w, now); err != nil {
+		return err
 	}
 	watch, ok, err := s.deps.Store.LadoSessionWatch(ctx, exec.SessionID)
 	if err != nil {
@@ -333,9 +375,32 @@ func (s *Service) watch(ctx context.Context, pass *tickPass, exec domain.LadoExe
 	if err := s.watchLimit(ctx, &w, now); err != nil {
 		return fmt.Errorf("watch the usage limit: %w", err)
 	}
+	if err := s.watchRestart(ctx, &w, now); err != nil {
+		return fmt.Errorf("watch the restart: %w", err)
+	}
 	if err := s.watchStall(ctx, &w, now); err != nil {
 		return fmt.Errorf("watch the stall: %w", err)
 	}
+	s.watchAwaiting(ctx, &w, now)
+	return nil
+}
+
+// readBackground reads the worker's live background work: the bridge's
+// report, or, when the bridge cannot report, the conversation file's.
+func (s *Service) readBackground(ctx context.Context, w *worker, now time.Time) error {
+	bg, known, err := s.deps.Store.LadoSessionBackground(ctx, w.session.ID)
+	if err != nil {
+		return fmt.Errorf("read the background tasks: %w", err)
+	}
+	if (!known || bg.Source == domain.BackgroundSourceTranscript) && s.deps.Background != nil {
+		read, ok, err := s.deps.Background.Read(ctx, w.session.ID, now)
+		if err != nil {
+			s.deps.Log.Debug("LADO could not read a worker's background work", "session", w.session.ID, "err", err)
+		} else if ok {
+			bg = read
+		}
+	}
+	w.background = bg
 	return nil
 }
 
@@ -414,7 +479,7 @@ func (s *Service) accountKey(ctx context.Context, w worker) (string, bool) {
 	return domain.LadoAccountKey(w.session.Harness, accountID)
 }
 
-// send delivers one of LADO's two wake messages, and audits it.
+// send delivers one of LADO's wake messages, and audits it.
 func (s *Service) send(ctx context.Context, w worker, kind, text string, now time.Time, payload map[string]any) error {
 	if err := s.deps.Messenger.Send(ctx, w.session.ID, text); err != nil {
 		return fmt.Errorf("send the %s message: %w", kind, err)

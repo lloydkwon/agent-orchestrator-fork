@@ -27,18 +27,23 @@ var (
 var t0 = time.Date(2026, 10, 29, 7, 33, 0, 0, time.UTC)
 
 type fakeStore struct {
-	mu       sync.Mutex
-	execs    []domain.LadoExecution
-	prs      map[domain.SessionID]domain.LadoExecutionPR
-	tasks    map[domain.LadoTaskID]domain.LadoTask
-	reports  map[domain.SessionID]domain.ReportState
-	settings map[domain.ProjectID]domain.LadoWatchSettings
-	watches  map[domain.SessionID]domain.LadoSessionWatch
-	limits   map[string]domain.LadoAccountLimit
-	defaults map[domain.AgentAccountProvider]string
-	alerts   []domain.LadoAlert
-	audits   []domain.LadoAuditEvent
-	notices  []domain.LadoOrchestratorNotice
+	mu      sync.Mutex
+	execs   []domain.LadoExecution
+	prs     map[domain.SessionID]domain.LadoExecutionPR
+	tasks   map[domain.LadoTaskID]domain.LadoTask
+	reports map[domain.SessionID]domain.ReportState
+	// reportsAt is when each report was made; t0 when not set.
+	reportsAt map[domain.SessionID]time.Time
+	// background is each session's live background tasks; none known
+	// without an entry.
+	background map[domain.SessionID]domain.SessionBackgroundTasks
+	settings   map[domain.ProjectID]domain.LadoWatchSettings
+	watches    map[domain.SessionID]domain.LadoSessionWatch
+	limits     map[string]domain.LadoAccountLimit
+	defaults   map[domain.AgentAccountProvider]string
+	alerts     []domain.LadoAlert
+	audits     []domain.LadoAuditEvent
+	notices    []domain.LadoOrchestratorNotice
 	// ladoProjects are the LADO mode projects; waiting is what
 	// CountLadoAccountLimitedWaits answers, and waitCounts how often it was
 	// asked. records counts the account limit records.
@@ -52,13 +57,15 @@ type fakeStore struct {
 
 func newFakeStore() *fakeStore {
 	return &fakeStore{
-		prs:      map[domain.SessionID]domain.LadoExecutionPR{},
-		tasks:    map[domain.LadoTaskID]domain.LadoTask{},
-		reports:  map[domain.SessionID]domain.ReportState{},
-		settings: map[domain.ProjectID]domain.LadoWatchSettings{},
-		watches:  map[domain.SessionID]domain.LadoSessionWatch{},
-		limits:   map[string]domain.LadoAccountLimit{},
-		defaults: map[domain.AgentAccountProvider]string{},
+		prs:        map[domain.SessionID]domain.LadoExecutionPR{},
+		tasks:      map[domain.LadoTaskID]domain.LadoTask{},
+		reports:    map[domain.SessionID]domain.ReportState{},
+		reportsAt:  map[domain.SessionID]time.Time{},
+		background: map[domain.SessionID]domain.SessionBackgroundTasks{},
+		settings:   map[domain.ProjectID]domain.LadoWatchSettings{},
+		watches:    map[domain.SessionID]domain.LadoSessionWatch{},
+		limits:     map[string]domain.LadoAccountLimit{},
+		defaults:   map[domain.AgentAccountProvider]string{},
 	}
 }
 
@@ -87,11 +94,24 @@ func (f *fakeStore) LadoTask(_ context.Context, id domain.LadoTaskID) (domain.La
 	return t, ok, nil
 }
 
-func (f *fakeStore) LatestSessionReport(_ context.Context, id domain.SessionID) (domain.ReportState, string, bool, error) {
+// LatestSessionReportAt answers a report as made at reportsAt[id], or at t0,
+// the end of the fixture's first turn, without one.
+func (f *fakeStore) LatestSessionReportAt(_ context.Context, id domain.SessionID) (domain.ReportState, time.Time, bool, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	r, ok := f.reports[id]
-	return r, "", ok, nil
+	at, set := f.reportsAt[id]
+	if !set {
+		at = t0
+	}
+	return r, at, ok, nil
+}
+
+func (f *fakeStore) LadoSessionBackground(_ context.Context, id domain.SessionID) (domain.SessionBackgroundTasks, bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	b, ok := f.background[id]
+	return b, ok, nil
 }
 
 func (f *fakeStore) LadoEffectiveWatchSettings(_ context.Context, p domain.ProjectID) (domain.LadoWatchSettings, error) {

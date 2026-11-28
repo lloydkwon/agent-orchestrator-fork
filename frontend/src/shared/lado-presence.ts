@@ -21,6 +21,8 @@ export const LADO_PRESENCE_CHANGE_PROJECT_CHECKS_CHANNEL = "lado:presence:change
 export const LADO_PRESENCE_CHANGE_CLAUDE_CHROME_CHANNEL = "lado:presence:changeClaudeChrome";
 export const LADO_PRESENCE_CHANGE_DB_CHANGES_CHANNEL = "lado:presence:changeDbChanges";
 export const LADO_PRESENCE_APPLY_DB_CHANGES_CHANNEL = "lado:presence:applyDbChanges";
+export const LADO_PRESENCE_ENABLE_PHONE_APPROVAL_CHANNEL = "lado:presence:enablePhoneApproval";
+export const LADO_PRESENCE_ENROLL_PHONE_PASSKEY_CHANNEL = "lado:presence:enrollPhonePasskey";
 
 export type LadoPresenceApproveRequest = { revisionId: string };
 
@@ -198,3 +200,36 @@ export type LadoPresenceApplyDbChangesResult =
 	| { status: "queued"; run: LadoPresenceDbChangeRun }
 	| { status: "cancelled" }
 	| LadoPresenceFailure;
+
+export type LadoPresencePhoneStatus = components["schemas"]["LadoPhoneStatusResponse"];
+
+/**
+ * Turning phone approval on (ADR 0014): plans and integrations can then be
+ * approved with a passkey on the phone, so only the human may turn it on.
+ * Nothing crosses; main reads the state from the daemon and signs "{}".
+ */
+export type LadoPresencePhoneApprovalResult =
+	| { status: "enabled"; phone: LadoPresencePhoneStatus }
+	| { status: "cancelled" }
+	| LadoPresenceFailure;
+
+/** The code a phone shows after it made a passkey; only it crosses. */
+export type LadoPresencePhonePasskeyRequest = { code: string };
+
+export type LadoPresencePhonePasskey = components["schemas"]["LadoPhonePasskeyResponse"];
+
+export type LadoPresencePhonePasskeyResult =
+	| { status: "enrolled"; passkey: LadoPresencePhonePasskey }
+	| { status: "cancelled" }
+	| LadoPresenceFailure;
+
+// The code is eight digits; people may type it with spaces or dashes.
+const PHONE_CODE_SEPARATORS = /[\s-]+/g;
+const PHONE_CODE = /^[0-9]{8}$/;
+
+/** The phone's code as eight digits, or null when it is anything else. */
+export function normalizeLadoPhoneCode(input: unknown): string | null {
+	if (typeof input !== "string" || input.length > 32) return null;
+	const digits = input.replace(PHONE_CODE_SEPARATORS, "");
+	return PHONE_CODE.test(digits) ? digits : null;
+}

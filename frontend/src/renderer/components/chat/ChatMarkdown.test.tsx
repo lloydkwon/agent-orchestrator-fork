@@ -233,7 +233,8 @@ describe("ChatMarkdown", () => {
 		expect(link.getAttribute("rel")).toContain("noreferrer");
 	});
 
-	it("routes a plain web-link click to the AO Browser handler", async () => {
+	// LADO fork (TDD §11): 그냥 클릭한 웹 링크는 시스템 브라우저로 연다.
+	it("routes a plain web-link click to the system browser", async () => {
 		const user = userEvent.setup();
 		const onLinkOpen = vi.fn();
 		const openExternal = vi.spyOn(aoBridge.app, "openExternal").mockResolvedValue(undefined);
@@ -241,8 +242,8 @@ describe("ChatMarkdown", () => {
 
 		await user.click(screen.getByRole("link", { name: "the issue" }));
 
-		expect(onLinkOpen).toHaveBeenCalledWith("https://example.com/i/1");
-		expect(openExternal).not.toHaveBeenCalled();
+		expect(openExternal).toHaveBeenCalledWith("https://example.com/i/1");
+		expect(onLinkOpen).not.toHaveBeenCalled();
 		openExternal.mockRestore();
 	});
 
@@ -302,8 +303,9 @@ describe("ChatMarkdown", () => {
 		fireEvent.click(report, { metaKey: true });
 		fireEvent.contextMenu(report);
 		await userEvent.click(screen.getByRole("link", { name: "issue" }));
-		expect(onLinkOpen).toHaveBeenCalledExactlyOnceWith("https://example.com/i/1");
-		expect(openExternal).not.toHaveBeenCalled();
+		// LADO fork (TDD §11): 그냥 클릭한 웹 링크는 시스템 브라우저로 연다.
+		expect(openExternal).toHaveBeenCalledExactlyOnceWith("https://example.com/i/1");
+		expect(onLinkOpen).not.toHaveBeenCalled();
 		openExternal.mockRestore();
 	});
 
@@ -435,39 +437,42 @@ describe("ChatMarkdown", () => {
 		expect(screen.queryByRole("link")).not.toBeInTheDocument();
 	});
 
-	it("opens a web link in the system browser on Option/Alt-click", () => {
+	// LADO fork (TDD §11): 수정키를 누른 클릭이 내장 Browser 패널로 연다.
+	it("opens a web link in the AO Browser on Option/Alt-click", () => {
 		const onLinkOpen = vi.fn();
 		const openExternal = vi.spyOn(aoBridge.app, "openExternal").mockResolvedValue(undefined);
 		renderWithLinkHandler("see [the issue](https://example.com/i/1)", onLinkOpen);
 
 		fireEvent.click(screen.getByRole("link", { name: "the issue" }), { altKey: true });
 
-		expect(openExternal).toHaveBeenCalledWith("https://example.com/i/1");
-		expect(onLinkOpen).not.toHaveBeenCalled();
+		expect(onLinkOpen).toHaveBeenCalledWith("https://example.com/i/1");
+		expect(openExternal).not.toHaveBeenCalled();
 		openExternal.mockRestore();
 	});
 
-	it("opens a web link in the system browser on Cmd-click", () => {
+	// LADO fork (TDD §11): 수정키를 누른 클릭이 내장 Browser 패널로 연다.
+	it("opens a web link in the AO Browser on Cmd-click", () => {
 		const onLinkOpen = vi.fn();
 		const openExternal = vi.spyOn(aoBridge.app, "openExternal").mockResolvedValue(undefined);
 		renderWithLinkHandler("see [the issue](https://example.com/i/1)", onLinkOpen);
 
 		fireEvent.click(screen.getByRole("link", { name: "the issue" }), { metaKey: true });
 
-		expect(openExternal).toHaveBeenCalledWith("https://example.com/i/1");
-		expect(onLinkOpen).not.toHaveBeenCalled();
+		expect(onLinkOpen).toHaveBeenCalledWith("https://example.com/i/1");
+		expect(openExternal).not.toHaveBeenCalled();
 		openExternal.mockRestore();
 	});
 
-	it("opens a web link in the system browser on Ctrl-click", () => {
+	// LADO fork (TDD §11): 수정키를 누른 클릭이 내장 Browser 패널로 연다.
+	it("opens a web link in the AO Browser on Ctrl-click", () => {
 		const onLinkOpen = vi.fn();
 		const openExternal = vi.spyOn(aoBridge.app, "openExternal").mockResolvedValue(undefined);
 		renderWithLinkHandler("see [the issue](https://example.com/i/1)", onLinkOpen);
 
 		fireEvent.click(screen.getByRole("link", { name: "the issue" }), { ctrlKey: true });
 
-		expect(openExternal).toHaveBeenCalledWith("https://example.com/i/1");
-		expect(onLinkOpen).not.toHaveBeenCalled();
+		expect(onLinkOpen).toHaveBeenCalledWith("https://example.com/i/1");
+		expect(openExternal).not.toHaveBeenCalled();
 		openExternal.mockRestore();
 	});
 

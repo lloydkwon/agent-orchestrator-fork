@@ -3147,6 +3147,32 @@ paths:
       summary: Mark an alert seen; an alert seen before keeps its first time
       tags:
       - lado
+  /api/v1/lado/background-tasks:
+    get:
+      operationId: listLadoSessionBackground
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LadoBackgroundListResponse'
+          description: OK
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Internal Server Error
+        "501":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Not Implemented
+      summary: List the background tasks (shells, Monitors, subagents) of the live
+        sessions AO knows them of; a session idle on them waits on its own work
+      tags:
+      - lado
   /api/v1/lado/bindings:
     put:
       operationId: setLadoBinding
@@ -4102,6 +4128,342 @@ paths:
           description: Not Implemented
       summary: Write a knowledge note for a running session of a LADO mode project
         into that session's project; an update sends the revision it read as baseRevision
+      tags:
+      - lado
+  /api/v1/lado/phone/disable:
+    post:
+      operationId: disableLadoPhone
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LadoPhoneStatusResponse'
+          description: OK
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Internal Server Error
+        "501":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Not Implemented
+      summary: Turn phone approval off; needs no human-presence proof. Clears tailscale
+        serve only while it points at the socket
+      tags:
+      - lado
+  /api/v1/lado/phone/enable:
+    post:
+      operationId: enableLadoPhone
+      parameters:
+      - description: Human-presence proof v1.<nonce>.<expires>.<mac>, signed by the
+          AO desktop app over the method, path and body.
+        in: header
+        name: X-LADO-Presence
+        schema:
+          description: Human-presence proof v1.<nonce>.<expires>.<mac>, signed by
+            the AO desktop app over the method, path and body.
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EnableLadoPhoneRequest'
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LadoPhoneStatusResponse'
+          description: OK
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Bad Request
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Forbidden
+        "409":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Conflict
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Internal Server Error
+        "501":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Not Implemented
+        "503":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Service Unavailable
+      summary: 'Turn phone approval on with a human-presence proof (phone_approval.on,
+        subject phone-approval): opens the socket and points tailscale serve at it;
+        refused off Linux, when tailscaled runs as the daemon''s user, or when the
+        port serves something else or has funnel on'
+      tags:
+      - lado
+  /api/v1/lado/phone/enroll-window:
+    post:
+      operationId: openLadoPhoneEnrollWindow
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LadoPhoneStatusResponse'
+          description: OK
+        "409":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Conflict
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Internal Server Error
+        "501":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Not Implemented
+      summary: Open a ten-minute phone passkey enrollment, discarding one already
+        open; enrolls nothing by itself
+      tags:
+      - lado
+  /api/v1/lado/phone/pairings/lookup:
+    post:
+      operationId: lookupLadoPhonePairing
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LookupLadoPhonePairingRequest'
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LadoPhonePairingResponse'
+          description: OK
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Bad Request
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Not Found
+        "409":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Conflict
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Internal Server Error
+        "501":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Not Implemented
+      summary: Look up the passkey a phone made by the code only the phone shows;
+        five wrong codes close the enrollment
+      tags:
+      - lado
+  /api/v1/lado/phone/passkeys:
+    get:
+      operationId: listLadoPhonePasskeys
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LadoPhonePasskeyListResponse'
+          description: OK
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Internal Server Error
+        "501":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Not Implemented
+      summary: List the enrolled phone passkeys, revoked ones too
+      tags:
+      - lado
+    post:
+      operationId: enrollLadoPhonePasskey
+      parameters:
+      - description: Human-presence proof v1.<nonce>.<expires>.<mac>, signed by the
+          AO desktop app over the method, path and body.
+        in: header
+        name: X-LADO-Presence
+        schema:
+          description: Human-presence proof v1.<nonce>.<expires>.<mac>, signed by
+            the AO desktop app over the method, path and body.
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EnrollLadoPhonePasskeyRequest'
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LadoPhonePasskeyResponse'
+          description: OK
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Bad Request
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Not Found
+        "409":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Conflict
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Internal Server Error
+        "501":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Not Implemented
+      summary: Enroll the passkey a phone made with a human-presence proof (phone_passkey.enroll,
+        subject the credential's sha256); the pairing is used up whatever the outcome
+      tags:
+      - lado
+  /api/v1/lado/phone/passkeys/{passkeyId}:
+    delete:
+      operationId: revokeLadoPhonePasskey
+      parameters:
+      - description: LADO phone passkey id.
+        in: path
+        name: passkeyId
+        required: true
+        schema:
+          description: LADO phone passkey id.
+          type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LadoPhoneRevokeResponse'
+          description: OK
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Not Found
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Internal Server Error
+        "501":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Not Implemented
+      summary: Revoke a phone passkey; needs no human-presence proof. Its row stays,
+        so the credential cannot be enrolled again
+      tags:
+      - lado
+  /api/v1/lado/phone/status:
+    get:
+      operationId: getLadoPhoneStatus
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LadoPhoneStatusResponse'
+          description: OK
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Internal Server Error
+        "501":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Not Implemented
+      summary: 'Get phone approval''s state: whether it is on, what turning it on
+        fixed, whether its socket listens and the open enrollment'
       tags:
       - lado
   /api/v1/lado/plan-requests/{requestId}/critique:
@@ -20862,6 +21224,10 @@ components:
       required:
       - text
       type: object
+    EnableLadoPhoneRequest:
+      additionalProperties: false
+      description: The empty object {}; the presence proof signs exactly these bytes.
+      type: object
     EndpointsResponse:
       properties:
         endpoints:
@@ -20870,6 +21236,17 @@ components:
           type: array
       required:
       - endpoints
+      type: object
+    EnrollLadoPhonePasskeyRequest:
+      properties:
+        code:
+          type: string
+        credentialSha256:
+          pattern: ^[0-9a-f]{64}$
+          type: string
+      required:
+      - code
+      - credentialSha256
       type: object
     EnsureAgentReadinessRequest:
       properties:
@@ -21582,6 +21959,8 @@ components:
           - stalled
           - agent_unavailable
           - conflict_unresolved
+          - background_overdue
+          - restart_resumed
           type: string
         level:
           description: 1 past a cost threshold, 2 past twice it; the resume's number
@@ -21711,6 +22090,34 @@ components:
       - setup
       - aoSystemSha256
       - accepted
+      type: object
+    LadoBackgroundListResponse:
+      properties:
+        sessions:
+          items:
+            $ref: '#/components/schemas/LadoSessionBackgroundResponse'
+          type: array
+      required:
+      - sessions
+      type: object
+    LadoBackgroundTaskResponse:
+      properties:
+        description:
+          description: The command's first line or the task's description, at most
+            80 characters.
+          type: string
+        startedAt:
+          description: When the task started; omitted when unknown.
+          format: date-time
+          type:
+          - "null"
+          - string
+        type:
+          description: shell, subagent, monitor or workflow, as the agent names it.
+          type: string
+      required:
+      - type
+      - description
       type: object
     LadoBranchProtectionResponse:
       properties:
@@ -22318,6 +22725,12 @@ components:
         planReview:
           $ref: '#/components/schemas/LadoPlanReviewSettings'
           description: When LADO skips the review of a plan worker's draft.
+        restoreOnStart:
+          description: At the daemon's start, start again the agent of each session
+            a reboot stopped, in its own worktree and conversation, and tell a LADO
+            worker whose turn was cut off to go on. Off leaves them stopped until
+            a person restores them.
+          type: boolean
         updatedAt:
           description: When the settings last changed; omitted while the defaults
             apply.
@@ -22334,6 +22747,7 @@ components:
       - maxWorkers
       - holdOnDiskLow
       - minFreeDiskGb
+      - restoreOnStart
       type: object
     LadoEffectiveAgentResponse:
       properties:
@@ -23911,6 +24325,128 @@ components:
       - name
       - status
       type: object
+    LadoPhonePairingResponse:
+      properties:
+        createdAt:
+          format: date-time
+          type: string
+        credentialSha256:
+          description: The credential id's sha256 in hex, the subject of the enrollment's
+            presence proof.
+          type: string
+        deviceHint:
+          type: string
+        fingerprint:
+          description: The first eight hex characters of the credential id's sha256.
+          type: string
+        login:
+          type: string
+      required:
+      - deviceHint
+      - login
+      - createdAt
+      - fingerprint
+      - credentialSha256
+      type: object
+    LadoPhonePasskeyListResponse:
+      properties:
+        passkeys:
+          items:
+            $ref: '#/components/schemas/LadoPhonePasskeyResponse'
+          type: array
+      required:
+      - passkeys
+      type: object
+    LadoPhonePasskeyResponse:
+      properties:
+        cloneWarning:
+          description: The passkey's sign count once went back; it is refused from
+            then on.
+          type: boolean
+        createdAt:
+          format: date-time
+          type: string
+        deviceHint:
+          type: string
+        fingerprint:
+          type: string
+        id:
+          type: string
+        lastUsedAt:
+          format: date-time
+          type:
+          - "null"
+          - string
+        login:
+          type: string
+        revoked:
+          type: boolean
+        revokedAt:
+          format: date-time
+          type:
+          - "null"
+          - string
+        rpId:
+          type: string
+      required:
+      - id
+      - fingerprint
+      - deviceHint
+      - login
+      - rpId
+      - createdAt
+      - revoked
+      - cloneWarning
+      type: object
+    LadoPhoneRevokeResponse:
+      properties:
+        revoked:
+          type: boolean
+      required:
+      - revoked
+      type: object
+    LadoPhoneStatusResponse:
+      properties:
+        enabled:
+          type: boolean
+        enrollUrl:
+          type: string
+        enrollWindowExpiresAt:
+          format: date-time
+          type:
+          - "null"
+          - string
+        listening:
+          type: boolean
+        origin:
+          description: https://<MagicDNS name>:<serve port>, the phone pages' origin.
+          type: string
+        ownerLogin:
+          description: The tailnet login that turned phone approval on; only its requests
+            pass.
+          type: string
+        pairingPending:
+          type: boolean
+        rpId:
+          description: 'WebAuthn relying party id: the machine''s MagicDNS name.'
+          type: string
+        servePort:
+          description: 'The tailnet HTTPS port phone approval serves on: the one turning
+            it on fixed while it is on, otherwise the one turning it on would use
+            (default 8444).'
+          type: integer
+        supported:
+          type: boolean
+      required:
+      - supported
+      - enabled
+      - rpId
+      - origin
+      - ownerLogin
+      - servePort
+      - listening
+      - pairingPending
+      type: object
     LadoPlanApprovalResponse:
       properties:
         approvedAt:
@@ -25259,6 +25795,30 @@ components:
           type: string
       required:
       - ok
+      type: object
+    LadoSessionBackgroundResponse:
+      properties:
+        sessionId:
+          type: string
+        source:
+          description: 'bridge: the agent bridge''s own report; transcript: read from
+            the conversation file and the process table.'
+          enum:
+          - bridge
+          - transcript
+          type: string
+        tasks:
+          items:
+            $ref: '#/components/schemas/LadoBackgroundTaskResponse'
+          type: array
+        updatedAt:
+          format: date-time
+          type: string
+      required:
+      - sessionId
+      - tasks
+      - source
+      - updatedAt
       type: object
     LadoSessionClaudeChromeResponse:
       properties:
@@ -28067,6 +28627,8 @@ components:
       type: object
     LadoWatchSettingsResolved:
       properties:
+        awaitMinutes:
+          type: integer
         compactWindow:
           type: integer
         sessionCompactions:
@@ -28088,6 +28650,7 @@ components:
       - sessionCompactions
       - stallMinutes
       - wakeEnabled
+      - awaitMinutes
       type: object
     LadoWatchSettingsResponse:
       properties:
@@ -28122,6 +28685,15 @@ components:
       type: object
     LadoWatchSettingsValues:
       properties:
+        awaitMinutes:
+          description: How long a running worker may rest after its turn, without
+            a report, before LADO tells the owner it waits on them with a needs_input
+            notification. 0 tells only of a needs-input report.
+          maximum: 10080
+          minimum: 0
+          type:
+          - "null"
+          - integer
         compactWindow:
           description: The token count Claude Code sessions of a project in LADO mode
             compact at (CLAUDE_CODE_AUTO_COMPACT_WINDOW), and Codex sessions' compact
@@ -28175,6 +28747,7 @@ components:
       - sessionCompactions
       - stallMinutes
       - wakeEnabled
+      - awaitMinutes
       type: object
     LinkPreviewResponse:
       properties:
@@ -28529,6 +29102,15 @@ components:
       - path
       - entries
       - truncated
+      type: object
+    LookupLadoPhonePairingRequest:
+      properties:
+        code:
+          description: The eight digits the phone shows; spaces and dashes do not
+            matter.
+          type: string
+      required:
+      - code
       type: object
     MarkAllNotificationsReadRequest:
       properties:
@@ -32288,6 +32870,10 @@ components:
           - integer
         planReview:
           $ref: '#/components/schemas/LadoPlanReviewSettings'
+        restoreOnStart:
+          type:
+          - "null"
+          - boolean
       required:
       - maxConcurrent
       - maxRunMinutes
@@ -32542,6 +33128,15 @@ components:
       type: object
     UpdateLadoWatchSettingsRequest:
       properties:
+        awaitMinutes:
+          description: How long a running worker may rest after its turn, without
+            a report, before LADO tells the owner it waits on them with a needs_input
+            notification. 0 tells only of a needs-input report.
+          maximum: 10080
+          minimum: 0
+          type:
+          - "null"
+          - integer
         compactWindow:
           description: The token count Claude Code sessions of a project in LADO mode
             compact at (CLAUDE_CODE_AUTO_COMPACT_WINDOW), and Codex sessions' compact
@@ -32595,6 +33190,7 @@ components:
       - sessionCompactions
       - stallMinutes
       - wakeEnabled
+      - awaitMinutes
       type: object
     UpdateProjectSettingsInput:
       properties:

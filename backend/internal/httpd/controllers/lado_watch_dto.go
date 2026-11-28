@@ -14,6 +14,7 @@ type LadoWatchSettingsValues struct {
 	SessionCompactions *int   `json:"sessionCompactions" minimum:"1" maximum:"100" description:"How many times one session may compact before LADO alerts."`
 	StallMinutes       *int   `json:"stallMinutes" minimum:"10" maximum:"10080" description:"How long a running worker may rest without a report before LADO takes it as stalled."`
 	WakeEnabled        *bool  `json:"wakeEnabled" description:"Let LADO send its two fixed wake messages to the workers: the limit resume and the stall nudge."`
+	AwaitMinutes       *int   `json:"awaitMinutes" minimum:"0" maximum:"10080" description:"How long a running worker may rest after its turn, without a report, before LADO tells the owner it waits on them with a needs_input notification. 0 tells only of a needs-input report."`
 }
 
 // LadoWatchSettingsResolved is a settings row resolved: every value set.
@@ -24,6 +25,7 @@ type LadoWatchSettingsResolved struct {
 	SessionCompactions int   `json:"sessionCompactions"`
 	StallMinutes       int   `json:"stallMinutes"`
 	WakeEnabled        bool  `json:"wakeEnabled"`
+	AwaitMinutes       int   `json:"awaitMinutes"`
 }
 
 // LadoWatchSettingsResponse is one settings row, what its nulls follow and
@@ -61,7 +63,7 @@ type LadoAlertResponse struct {
 	SessionID      string     `json:"sessionId" description:"The session; empty for an alert of the task's total or of the task itself."`
 	ProjectID      string     `json:"projectId"`
 	IssueRef       string     `json:"issueRef"`
-	Kind           string     `json:"kind" enum:"task_cost,session_cost,session_compactions,limited,limit_resumed,stall_nudged,stalled,agent_unavailable,conflict_unresolved"`
+	Kind           string     `json:"kind" enum:"task_cost,session_cost,session_compactions,limited,limit_resumed,stall_nudged,stalled,agent_unavailable,conflict_unresolved,background_overdue,restart_resumed"`
 	Level          int        `json:"level" description:"1 past a cost threshold, 2 past twice it; the resume's number for limit_resumed, the stop's for limited and the stall's for stalled; otherwise 1."`
 	Value          int64      `json:"value" description:"Cents for a cost, a count for compactions, minutes for a stall, the reset's Unix seconds for limited, the failed resolve workers in a row for conflict_unresolved."`
 	Threshold      int64      `json:"threshold" description:"The threshold the value is held against, in the value's unit; 0 when there is none."`

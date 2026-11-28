@@ -244,10 +244,7 @@ func (s *Service) ApprovePlan(ctx context.Context, revisionID domain.LadoPlanRev
 		return domain.LadoPlanApproval{}, err
 	}
 	now := s.deps.Clock().UTC()
-	actor := "human"
-	if proof.Dev {
-		actor = "human:dev-presence"
-	}
+	actor := proof.Actor()
 	approval := domain.LadoPlanApproval{
 		ID:         domain.LadoPlanApprovalID("lado-approval-" + s.deps.NewID()),
 		RevisionID: rev.ID,

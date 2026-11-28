@@ -33,13 +33,13 @@ vi.mock("./LadoLogWatchCard", () => ({ LadoLogWatchCard: () => <div data-testid=
 vi.mock("./LadoDBChangeSettingsCard", () => ({ LadoDBChangeSettingsCard: () => <div data-testid="lado-db-changes-card" /> }));
 
 /** The worker watch card below (issue #42), with nothing saved. */
-const watchDefaults = { compactWindow: 200_000, taskCostCents: 100_00, sessionCostCents: 30_00, sessionCompactions: 3, stallMinutes: 120, wakeEnabled: true };
+const watchDefaults = { compactWindow: 200_000, taskCostCents: 100_00, sessionCostCents: 30_00, sessionCompactions: 3, stallMinutes: 120, wakeEnabled: true, awaitMinutes: 10 };
 const watchSettings: lado.LadoWatchSettings = {
 	projectId: "",
 	defaults: watchDefaults,
 	inherited: watchDefaults,
 	effective: watchDefaults,
-	values: { compactWindow: null, taskCostCents: null, sessionCostCents: null, sessionCompactions: null, stallMinutes: null, wakeEnabled: null },
+	values: { compactWindow: null, taskCostCents: null, sessionCostCents: null, sessionCompactions: null, stallMinutes: null, wakeEnabled: null, awaitMinutes: null },
 };
 
 // The settings dialog around the page, as SettingsDialog.test.tsx stubs it.

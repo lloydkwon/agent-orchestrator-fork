@@ -584,6 +584,8 @@ func (c *conversation) handleNotification(method string, params json.RawMessage)
 		}
 	case persistenthost.ACPPromptResultMethod, persistenthost.ACPInteractionCommandMethod:
 		_, err = c.HandleExtensionMethod(context.Background(), method, params)
+	case BackgroundTasksMethod:
+		err = c.handleBackgroundTasks(params)
 	default:
 		return false
 	}

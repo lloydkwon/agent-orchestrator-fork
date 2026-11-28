@@ -14,7 +14,8 @@ var ladoWatchTables = []struct {
 	name    string
 	columns []string
 }{
-	{"lado_watch_settings", []string{"project_id", "compact_window", "task_cost_cents", "session_cost_cents", "session_compactions", "stall_minutes", "wake_enabled", "updated_at"}},
+	// 0024 adds await_minutes.
+	{"lado_watch_settings", []string{"project_id", "compact_window", "task_cost_cents", "session_cost_cents", "session_compactions", "stall_minutes", "wake_enabled", "updated_at", "await_minutes"}},
 	{"lado_session_watch", []string{
 		"session_id", "task_id", "read_offsets_json", "compactions", "compacted_at",
 		"limit_state", "limit_reset_at", "limit_reset_guess", "limit_seen_at", "resumes", "resumed_at", "limit_stops",

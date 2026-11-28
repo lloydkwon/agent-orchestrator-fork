@@ -23,6 +23,7 @@ import {
 } from "./lado";
 import type { LadoAlertEvent } from "./lado-alert-notifications";
 import { ladoDBChangeExecutionQueryKey, ladoDBChangeProjectQueryKey } from "./lado-db-changes";
+import { ladoBackgroundQueryKey } from "./lado-background";
 import { ladoLogWatchProjectQueryKey } from "./lado-log-watch";
 import { ladoSetupQueryRoot } from "./lado-setup";
 
@@ -109,8 +110,14 @@ export function createLadoEventBatch(queryClient: Pick<QueryClient, "getQueryDat
 	// or applications changed, and the runs whose SQL files moved.
 	const dbChangeProjects = new Set<string>();
 	const dbChangeSessions = new Set<string>();
+	// A session's background tasks changed (LADO fork, 2026-11-27): the sidebar's 💻.
+	let backgroundChanged = false;
 	return {
 		note(payload: LadoEventPayload, event?: LadoEventEnvelope): boolean {
+			if (payload?.kind === "lado_background") {
+				backgroundChanged = true;
+				return true;
+			}
 			// A session's limit, stall or compactions changed, or an alert was
 			// raised or seen: the board's costs and badges and the task's usage.
 			if ((payload?.kind === "lado_watch" || payload?.kind === "lado_alert") && typeof payload.projectId === "string" && payload.projectId) {
@@ -186,6 +193,10 @@ export function createLadoEventBatch(queryClient: Pick<QueryClient, "getQueryDat
 			return false;
 		},
 		flush(invalidate: (queryKey: QueryKey) => void): void {
+			if (backgroundChanged) {
+				invalidate(ladoBackgroundQueryKey);
+				backgroundChanged = false;
+			}
 			// A rule change can send approved tasks back to review: refresh the
 			// rules, what applies in each project reached, its lanes, and the
 			// open task view, whose key does not name its project.

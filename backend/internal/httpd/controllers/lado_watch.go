@@ -189,6 +189,7 @@ func writeLadoWatchSettings(w http.ResponseWriter, r *http.Request, view ladoale
 			SessionCompactions: view.Values.SessionCompactions,
 			StallMinutes:       view.Values.StallMinutes,
 			WakeEnabled:        view.Values.WakeEnabled,
+			AwaitMinutes:       view.Values.AwaitMinutes,
 		},
 		Inherited: ladoWatchResolved(view.Inherited),
 		Effective: ladoWatchResolved(view.Effective),
@@ -205,6 +206,7 @@ func ladoWatchOverrides(req UpdateLadoWatchSettingsRequest) domain.LadoWatchOver
 		SessionCompactions: req.SessionCompactions,
 		StallMinutes:       req.StallMinutes,
 		WakeEnabled:        req.WakeEnabled,
+		AwaitMinutes:       req.AwaitMinutes,
 	}
 }
 
@@ -216,6 +218,7 @@ func ladoWatchResolved(s domain.LadoWatchSettings) LadoWatchSettingsResolved {
 		SessionCompactions: s.SessionCompactions,
 		StallMinutes:       s.StallMinutes,
 		WakeEnabled:        s.WakeEnabled,
+		AwaitMinutes:       s.AwaitMinutes,
 	}
 }
 

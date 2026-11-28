@@ -11,7 +11,7 @@ func TestLadoWatchDefaults(t *testing.T) {
 	d := LadoWatchDefaults()
 	want := LadoWatchSettings{
 		CompactWindow: 200_000, TaskCostCents: 100_00, SessionCostCents: 30_00,
-		SessionCompactions: 3, StallMinutes: 120, WakeEnabled: true,
+		SessionCompactions: 3, StallMinutes: 120, WakeEnabled: true, AwaitMinutes: 10,
 	}
 	if d != want {
 		t.Fatalf("defaults = %+v, want %+v", d, want)
@@ -34,6 +34,7 @@ func TestLadoWatchEffectiveLayersProjectOverGlobal(t *testing.T) {
 	want := LadoWatchSettings{
 		CompactWindow: 150_000, TaskCostCents: 50_00, SessionCostCents: LadoDefaultSessionCostCents,
 		SessionCompactions: 5, StallMinutes: LadoDefaultStallMinutes, WakeEnabled: false,
+		AwaitMinutes: LadoDefaultAwaitMinutes,
 	}
 	if got != want {
 		t.Fatalf("effective = %+v, want %+v", got, want)

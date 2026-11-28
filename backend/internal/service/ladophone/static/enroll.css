@@ -1,0 +1,10 @@
+:root { color-scheme: light dark; font-family: system-ui, sans-serif; }
+body { margin: 0; padding: 1.5rem 1rem; line-height: 1.5; }
+main { max-width: 32rem; margin: 0 auto; }
+h1 { font-size: 1.3rem; }
+button { font-size: 1.1rem; padding: 0.8rem 1.2rem; width: 100%; border-radius: 0.6rem; }
+[hidden] { display: none !important; }
+#msg[data-tone="stop"] { color: #c0392b; }
+#msg[data-tone="ok"] { color: #1e8449; }
+.code { font-size: 2.4rem; font-weight: 700; letter-spacing: 0.15em; text-align: center; font-variant-numeric: tabular-nums; margin: 1rem 0; }
+.fingerprint { font-family: ui-monospace, monospace; font-size: 1.2rem; font-weight: 600; }

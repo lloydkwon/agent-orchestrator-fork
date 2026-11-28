@@ -375,6 +375,10 @@ func (s *Store) LinkLadoPartExecution(ctx context.Context, request string, exec 
 		}
 		var n int64
 		if exec.Role == domain.LadoRoleIntegration {
+			// The integration worker opens the task's pull request.
+			if err := endLadoWorkerOnPRMerge(ctx, q, exec); err != nil {
+				return err
+			}
 			n, err = q.SetLadoPartRunDispatched(ctx, gen.SetLadoPartRunDispatchedParams{
 				DispatchedSessionID: ladoNullString(string(exec.SessionID)), ID: entry.ID, Request: request,
 			})
@@ -445,6 +449,19 @@ func (s *Store) LatestSessionReport(ctx context.Context, sessionID domain.Sessio
 		return "", "", false, fmt.Errorf("read the newest report of session %s: %w", sessionID, err)
 	}
 	return domain.ReportState(row.State), row.Note, true, nil
+}
+
+// LatestSessionReportAt is the state of a session's newest report and when
+// it was made; ok is false without a report.
+func (s *Store) LatestSessionReportAt(ctx context.Context, sessionID domain.SessionID) (domain.ReportState, time.Time, bool, error) {
+	row, err := s.qr.LatestSessionReportAt(ctx, string(sessionID))
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", time.Time{}, false, nil
+	}
+	if err != nil {
+		return "", time.Time{}, false, fmt.Errorf("read the newest report of session %s: %w", sessionID, err)
+	}
+	return domain.ReportState(row.State), row.CreatedAt.UTC(), true, nil
 }
 
 func ladoPartRunFromGen(row gen.LadoPartRun) domain.LadoPartRun {

@@ -3,6 +3,23 @@ import { THEMES, type ThemeDefinition, type ThemePalette } from "./theme-palette
 
 type Mode = "dark" | "light";
 
+const ANSI_SLOTS = ["black", "red", "green", "yellow", "blue", "magenta", "cyan", "white"] as const;
+
+/** Terminal tokens of a theme that brings its own terminal palette. */
+function exactTerminalTokens(terminal: ThemePalette["terminal"]): Record<string, string> {
+	if (!terminal) return {};
+	const names = [...ANSI_SLOTS, ...ANSI_SLOTS.map((slot) => `bright-${slot}`)];
+	return {
+		...Object.fromEntries(names.map((name, index) => [`--color-term-${name}`, terminal.ansi[index]])),
+		"--color-term-cursor": terminal.cursor,
+		"--color-term-cursor-text": terminal.cursorText,
+		"--color-term-selection-dark": terminal.selection,
+		"--color-term-selection-light": terminal.selection,
+		"--color-term-selection-inactive": terminal.selection,
+		"--color-term-selection-inactive-light": terminal.selection,
+	};
+}
+
 /**
  * Label color for a filled surface: white when it clears AA (the conventional
  * choice on saturated fills), otherwise whichever of white or black contrasts
@@ -77,8 +94,9 @@ export function deriveThemeTokens(p: ThemePalette, mode: Mode): Record<string, s
 		"--color-status-merged": p.purple,
 		"--color-project-accent-violet": p.purple,
 
-		// ANSI black collapses into the plate in terminal-themes.ts; white is the
-		// muted gray so light plates keep it visible.
+		// ANSI black collapses into the plate; white is the muted gray so light
+		// plates keep it visible. A theme with its own terminal palette replaces
+		// all of these below.
 		"--color-term-black": p.bg,
 		"--color-term-red": p.red,
 		"--color-term-green": p.green,
@@ -99,6 +117,9 @@ export function deriveThemeTokens(p: ThemePalette, mode: Mode): Record<string, s
 		"--color-term-selection-light": withAlpha(p.accent, 0.25),
 		"--color-term-selection-inactive": withAlpha(p.muted, 0.2),
 		"--color-term-selection-inactive-light": withAlpha(p.muted, 0.15),
+		"--color-term-cursor": dark ? primary : p.text,
+		"--color-term-cursor-text": p.bg,
+		...exactTerminalTokens(p.terminal),
 	};
 }
 

@@ -170,6 +170,16 @@ const KEYS = [
 	"lado.presence.integration.nextDbChanges",
 	"lado.presence.integration.nextDbChangesMany",
 	"lado.presence.integration.nextAfterDeploy",
+	// LADO fork: turning phone approval on and enrolling a phone's passkey
+	// (docs/LJY-PRD/adr/0014-phone-passkey-approvals.md).
+	"lado.presence.phone.enableTitle",
+	"lado.presence.phone.enableDetail",
+	"lado.presence.phone.enableAddressUnknown",
+	"lado.presence.phone.turnOn",
+	"lado.presence.phone.enrollTitle",
+	"lado.presence.phone.enrollDetail",
+	"lado.presence.phone.deviceUnknown",
+	"lado.presence.phone.enroll",
 ];
 
 const catalogs = {};

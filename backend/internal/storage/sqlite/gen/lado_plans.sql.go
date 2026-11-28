@@ -563,8 +563,8 @@ func (q *Queries) InsertLadoPlanRevision(ctx context.Context, arg InsertLadoPlan
 }
 
 const insertLadoPresenceProof = `-- name: InsertLadoPresenceProof :exec
-INSERT INTO lado_presence_proofs (nonce, action, subject_id, dev, expires_at, used_at)
-VALUES (?, ?, ?, ?, ?, ?)
+INSERT INTO lado_presence_proofs (nonce, action, subject_id, dev, via, expires_at, used_at)
+VALUES (?, ?, ?, ?, ?, ?, ?)
 `
 
 type InsertLadoPresenceProofParams struct {
@@ -572,6 +572,7 @@ type InsertLadoPresenceProofParams struct {
 	Action    string
 	SubjectID string
 	Dev       int64
+	Via       string
 	ExpiresAt time.Time
 	UsedAt    time.Time
 }
@@ -582,6 +583,7 @@ func (q *Queries) InsertLadoPresenceProof(ctx context.Context, arg InsertLadoPre
 		arg.Action,
 		arg.SubjectID,
 		arg.Dev,
+		arg.Via,
 		arg.ExpiresAt,
 		arg.UsedAt,
 	)

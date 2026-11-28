@@ -97,6 +97,7 @@ func TestSetSettingsAuditsTheChangeAsTheAPI(t *testing.T) {
 	// The plan request settings the change leaves out keep their values.
 	want.MaxPlanWorkers, want.PlanReview = domain.LadoDefaultMaxPlanWorkers, domain.DefaultLadoPlanReviewSettings()
 	want.MaxWorkers, want.HoldOnDiskLow, want.MinFreeDiskGB = domain.LadoDefaultMaxWorkers, true, domain.LadoDefaultMinFreeDiskGB
+	want.RestoreOnStart = domain.LadoRestoreOnStartOn
 	want.UpdatedAt = t0
 	if err != nil || !reflect.DeepEqual(stored, want) {
 		t.Fatalf("SetSettings = %+v, %v; want %+v", stored, err, want)
@@ -111,9 +112,9 @@ func TestSetSettingsAuditsTheChangeAsTheAPI(t *testing.T) {
 	}
 	wantPayload := map[string]map[string]any{
 		"from": {"maxConcurrent": 2.0, "maxRunMinutes": 480.0, "holdOnMemoryTight": true, "maxPlanWorkers": 2.0, "planReviewSkip": true, "planReviewSkipMaxPaths": 3.0,
-			"maxWorkers": 6.0, "holdOnDiskLow": true, "minFreeDiskGb": 10.0},
+			"maxWorkers": 6.0, "holdOnDiskLow": true, "minFreeDiskGb": 10.0, "restoreOnStart": true},
 		"to": {"maxConcurrent": 3.0, "maxRunMinutes": 120.0, "holdOnMemoryTight": false, "maxPlanWorkers": 2.0, "planReviewSkip": true, "planReviewSkipMaxPaths": 3.0,
-			"maxWorkers": 6.0, "holdOnDiskLow": true, "minFreeDiskGb": 10.0},
+			"maxWorkers": 6.0, "holdOnDiskLow": true, "minFreeDiskGb": 10.0, "restoreOnStart": true},
 	}
 	for side := range payload {
 		delete(payload[side], "planReviewPatterns")
@@ -142,5 +143,39 @@ func TestSetSettingsAuditsTheChangeAsTheAPI(t *testing.T) {
 	}
 	if current, err := f.svc.Settings(ctx); err != nil || !reflect.DeepEqual(current, want) || len(f.store.settingsEvents) != 1 {
 		t.Fatalf("settings after refused changes = %+v, %v; want %+v", current, err, want)
+	}
+}
+
+// Restoring the sessions a reboot stopped is a dispatch setting: a change
+// that names it stores it with its audit event, and one that leaves it out
+// keeps it.
+func TestSetSettingsKeepsRestoreOnStartUnlessTheChangeNamesIt(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	if got, err := f.svc.Settings(ctx); err != nil || got.RestoreOnStart != domain.LadoRestoreOnStartOn {
+		t.Fatalf("default = %q, %v; want restore on", got.RestoreOnStart, err)
+	}
+
+	off, err := f.svc.SetSettings(ctx, domain.LadoDispatchSettings{MaxConcurrent: 2, MaxRunMinutes: 480, HoldOnMemoryTight: true, RestoreOnStart: domain.LadoRestoreOnStartOff})
+	if err != nil || off.RestoreOnStart != domain.LadoRestoreOnStartOff || len(f.store.settingsEvents) != 1 {
+		t.Fatalf("turning it off = %q, %v after %d events; want it off with one event", off.RestoreOnStart, err, len(f.store.settingsEvents))
+	}
+	var payload map[string]map[string]any
+	if err := json.Unmarshal(f.store.settingsEvents[0].Payload, &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload["from"]["restoreOnStart"] != true || payload["to"]["restoreOnStart"] != false {
+		t.Fatalf("audit payload = %v, want restoreOnStart from true to false", payload)
+	}
+
+	kept, err := f.svc.SetSettings(ctx, domain.LadoDispatchSettings{MaxConcurrent: 3, MaxRunMinutes: 480, HoldOnMemoryTight: true})
+	if err != nil || kept.RestoreOnStart != domain.LadoRestoreOnStartOff || kept.MaxConcurrent != 3 {
+		t.Fatalf("a change that leaves it out = %+v, %v; want it still off", kept, err)
+	}
+
+	_, err = f.svc.SetSettings(ctx, domain.LadoDispatchSettings{MaxConcurrent: 3, MaxRunMinutes: 480, HoldOnMemoryTight: true, RestoreOnStart: "sometimes"})
+	var apiErr *apierr.Error
+	if !errors.As(err, &apiErr) || apiErr.Code != "LADO_DISPATCH_SETTINGS_INVALID" {
+		t.Fatalf("an unknown value = %v, want LADO_DISPATCH_SETTINGS_INVALID", err)
 	}
 }

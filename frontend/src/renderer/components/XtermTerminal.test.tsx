@@ -36,6 +36,7 @@ const state = vi.hoisted(() => ({
 		write(data: Uint8Array, done?: () => void): void;
 		cols: number;
 		screenElement: HTMLElement;
+		registerCharacterJoiner: ReturnType<typeof vi.fn>;
 		keyHandler?: (event: KeyboardEvent) => boolean;
 		wheelHandler?: (event: WheelEvent) => boolean;
 		selection: string;
@@ -234,6 +235,7 @@ vi.mock("@xterm/xterm", () => ({
 			this.scrollListeners.add(listener);
 			return { dispose: () => this.scrollListeners.delete(listener) };
 		}
+		registerCharacterJoiner = vi.fn(() => 1);
 		onKey(listener: (event: { key: string }) => void) {
 			this.keyListeners.add(listener);
 			return { dispose: () => this.keyListeners.delete(listener) };
@@ -544,11 +546,49 @@ describe("XtermTerminal", () => {
 		}
 	});
 
-	it("preserves the agent TUI palette without contrast remapping", () => {
+	it("does not join cells off Linux", () => {
+		render(<XtermTerminal theme="dark" />);
+		expect(state.lastTerminal!.registerCharacterJoiner).not.toHaveBeenCalled();
+	});
+
+	it("joins operator runs for ligatures on Linux, except while searching", async () => {
+		document.documentElement.dataset.aoPlatform = "linux";
+		const fonts: string[] = [];
+		const getContext = vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockImplementation(
+			() =>
+				({
+					set font(value: string) {
+						fonts.push(value);
+					},
+					measureText: (text: string) => ({ width: text.length * 8 }),
+				}) as unknown as RenderingContext,
+		);
+		try {
+			const { container } = render(<XtermTerminal theme="dark" fontSize={14} />);
+			const term = state.lastTerminal!;
+			term.dimensions = { css: { cell: { width: 8, height: 19 } } };
+			const joiner = term.registerCharacterJoiner.mock.calls[0]?.[0] as (text: string) => unknown;
+			expect(joiner("a -> b")).toEqual([[2, 4]]);
+			expect(fonts.at(-1)).toMatch(/ 14px /);
+
+			term.refresh.mockClear();
+			fireEvent.contextMenu(container.firstElementChild!);
+			fireEvent.click(await screen.findByText("Search terminal"));
+			await screen.findByRole("searchbox", { name: "Search terminal" });
+			expect(joiner("a -> b")).toEqual([]);
+			expect(term.refresh).toHaveBeenCalledWith(0, term.rows - 1);
+		} finally {
+			getContext.mockRestore();
+			delete document.documentElement.dataset.aoPlatform;
+		}
+	});
+
+	it("keeps bold colors and lifts only near-invisible text, as Ghostty does", () => {
 		render(<XtermTerminal theme="dark" />);
 
-		expect(state.lastTerminal!.options.drawBoldTextInBrightColors).toBe(true);
-		expect(state.lastTerminal!.options.minimumContrastRatio).toBe(1);
+		// LADO fork: Ghostty leaves bold-color unset.
+		expect(state.lastTerminal!.options.drawBoldTextInBrightColors).toBe(false);
+		expect(state.lastTerminal!.options.minimumContrastRatio).toBe(1.6);
 	});
 
 	it("focuses the terminal when human input is requested", async () => {
@@ -829,6 +869,38 @@ describe("XtermTerminal", () => {
 			style.remove();
 			delete document.documentElement.dataset.styleTheme;
 			act(() => useUiStore.setState({ themeStyle: "orchestrate" }));
+		}
+	});
+
+	it("builds the terminal with the terminal font, 14px, a 1.2 line height and a steady cursor", () => {
+		const style = document.createElement("style");
+		style.textContent = `* { --font-mono: "Mono Face"; --font-terminal: "Terminal Face", "Mono Face"; }`;
+		document.head.appendChild(style);
+
+		try {
+			render(<XtermTerminal theme="dark" />);
+			expect(state.lastTerminal!.options).toMatchObject({
+				cursorBlink: false,
+				fontFamily: expect.stringMatching(/^"Terminal Face", ?"Mono Face"$/),
+				fontSize: 14,
+				lineHeight: 1.2,
+				minimumContrastRatio: 1.6,
+			});
+		} finally {
+			style.remove();
+		}
+	});
+
+	it("falls back to the mono font when no terminal font is defined", () => {
+		const style = document.createElement("style");
+		style.textContent = `* { --font-mono: "Mono Face"; }`;
+		document.head.appendChild(style);
+
+		try {
+			render(<XtermTerminal theme="dark" />);
+			expect(state.lastTerminal!.options.fontFamily).toBe('"Mono Face"');
+		} finally {
+			style.remove();
 		}
 	});
 
@@ -2206,6 +2278,143 @@ describe("XtermTerminal", () => {
 		expect(onInput).toHaveBeenCalledWith("a", "keyboard");
 	});
 
+	describe("input method commits", () => {
+		// The ibus-hangul order was recorded from Electron 44 on X11; the others are
+		// the orders an input method that fills in or skips the composition would send.
+		function openTerminalInput() {
+			const onInput = vi.fn();
+			const { container, unmount } = render(
+				<XtermTerminal theme="dark" onReady={(terminal) => terminal.onUserInput(onInput)} />,
+			);
+			const host = container.querySelector<HTMLElement>(".terminal-xterm-host")!;
+			const textarea = host.appendChild(document.createElement("textarea"));
+			const imeKey = () => fireEvent.keyDown(textarea, { key: "Process", keyCode: 229 });
+			const compositionEnd = (data: string) => fireEvent.compositionEnd(textarea, { data });
+			const input = (inputType: string, data: string | null, target: HTMLElement = textarea) =>
+				target.dispatchEvent(new InputEvent("input", { bubbles: true, data, inputType }));
+			const key = (value: string, keyCode: number) => {
+				fireEvent.keyDown(textarea, { key: value, keyCode });
+				state.lastTerminal!.keyListeners.forEach((listener) => listener({ key: value }));
+			};
+			const received = () => onInput.mock.calls.map(([data]) => data as string);
+			return { container, host, textarea, unmount, imeKey, compositionEnd, input, key, onInput, received };
+		}
+
+		it("forwards a syllable committed after an empty composition (ibus-hangul)", () => {
+			const { imeKey, compositionEnd, input, onInput, received } = openTerminalInput();
+
+			imeKey();
+			input("insertCompositionText", "한");
+			imeKey();
+			input("deleteContentBackward", null);
+			compositionEnd("");
+			input("insertText", "한");
+			input("insertCompositionText", "ㄱ");
+
+			expect(received().filter(Boolean)).toEqual(["한"]);
+			expect(onInput).toHaveBeenCalledWith("한", "composition");
+		});
+
+		it("keeps the order of a committed syllable and the key that ended it", () => {
+			const { imeKey, compositionEnd, input, key, received } = openTerminalInput();
+
+			imeKey();
+			compositionEnd("");
+			input("insertText", "글");
+			key(" ", 32);
+			input("insertText", " ");
+
+			expect(received().filter(Boolean)).toEqual(["글", " "]);
+		});
+
+		it("does not repeat a composition that already carried its text", () => {
+			const { imeKey, compositionEnd, input, received } = openTerminalInput();
+
+			imeKey();
+			compositionEnd("漢字");
+			input("insertText", "漢字");
+
+			expect(received()).toEqual(["漢字"]);
+		});
+
+		it("forwards the same text again when a later key commits it", () => {
+			const { imeKey, compositionEnd, input, received } = openTerminalInput();
+
+			imeKey();
+			compositionEnd("가");
+			imeKey();
+			input("insertText", "가");
+
+			expect(received()).toEqual(["가", "가"]);
+		});
+
+		it("does not repeat a key xterm reported itself", () => {
+			const { imeKey, input, received } = openTerminalInput();
+
+			imeKey();
+			state.lastTerminal!.keyListeners.forEach((listener) => listener({ key: "." }));
+			input("insertText", ".");
+
+			expect(received()).toEqual(["."]);
+		});
+
+		it("forwards text an input method inserts without composing", () => {
+			const { imeKey, input, received } = openTerminalInput();
+
+			imeKey();
+			input("insertText", "，");
+			imeKey();
+			input("insertText", "，");
+
+			expect(received()).toEqual(["，", "，"]);
+		});
+
+		it("ignores inserted text that no input method key produced", () => {
+			const { imeKey, input, key, received } = openTerminalInput();
+
+			key("a", 65);
+			input("insertText", "a");
+			imeKey();
+			input("insertFromPaste", "pasted");
+			input("insertFromDrop", "dropped");
+
+			expect(received()).toEqual(["a"]);
+		});
+
+		it("ignores text inserted after a key the input method did not handle", () => {
+			const { textarea, imeKey, input, received } = openTerminalInput();
+
+			imeKey();
+			fireEvent.keyDown(textarea, { key: "Meta", keyCode: 91 });
+			input("insertText", "x");
+
+			expect(received()).toEqual([]);
+		});
+
+		it("stops listening when the terminal unmounts", () => {
+			const { host, unmount } = openTerminalInput();
+			const removed = vi.spyOn(host, "removeEventListener");
+
+			unmount();
+
+			expect(removed).toHaveBeenCalledWith("input", expect.any(Function), true);
+			expect(removed).toHaveBeenCalledWith("keydown", expect.any(Function), true);
+		});
+
+		it("does not send text typed in the terminal search box", async () => {
+			const { container, imeKey, input, received } = openTerminalInput();
+
+			imeKey();
+			fireEvent.contextMenu(container.firstElementChild!);
+			fireEvent.click(await screen.findByText("Search terminal"));
+			const search = await screen.findByRole("searchbox", { name: "Search terminal" });
+			fireEvent.keyDown(search, { key: "Process", keyCode: 229 });
+			input("insertText", "검색", search);
+
+			expect(received()).toEqual([]);
+		});
+	});
+
 	it("does not forward raw xterm data/control bytes as user input", () => {
 		const onInput = vi.fn();
 		render(
@@ -2548,8 +2757,8 @@ describe("XtermTerminal", () => {
 	it("translates wheel motion into SGR wheel reports for zellij scrollback", () => {
 		const onInput = vi.fn();
 		render(<XtermTerminal theme="dark" onReady={(terminal) => terminal.onUserInput(onInput)} />);
-		// rowHeight = fontSize(12) * lineHeight(1.35) = 16.2px; -50px => 3 lines up.
-		const suppressed = state.lastTerminal!.wheelHandler!({ clientX: 0, clientY: 0, deltaY: -50 } as WheelEvent);
+		// rowHeight = fontSize(14) * lineHeight(1.2) = 16.8px; -51px => 3 lines up.
+		const suppressed = state.lastTerminal!.wheelHandler!({ clientX: 0, clientY: 0, deltaY: -51 } as WheelEvent);
 
 		expect(suppressed).toBe(false);
 		expect(onInput).toHaveBeenCalledWith("\x1b[<64;1;1M\x1b[<64;1;1M\x1b[<64;1;1M", "wheel");
@@ -2613,9 +2822,9 @@ describe("XtermTerminal", () => {
 		state.lastTerminal!.modes.mouseTrackingMode = "none";
 		state.lastTerminal!.buffer.active.type = "normal";
 
-		// rowHeight = 16.2px; -50px => 3 lines up. The pane never sees these bytes;
+		// rowHeight = 16.8px; -51px => 3 lines up. The pane never sees these bytes;
 		// we scroll the terminal's retained scrollback locally instead.
-		expect(state.lastTerminal!.wheelHandler!({ clientX: 0, clientY: 0, deltaY: -50 } as WheelEvent)).toBe(false);
+		expect(state.lastTerminal!.wheelHandler!({ clientX: 0, clientY: 0, deltaY: -51 } as WheelEvent)).toBe(false);
 		expect(state.lastTerminal!.scrollLines).toHaveBeenLastCalledWith(-3);
 		expect(onInput).not.toHaveBeenCalled();
 
@@ -2632,7 +2841,7 @@ describe("XtermTerminal", () => {
 		// page key per notch is the best fallback.
 		state.lastTerminal!.buffer.active.type = "alternate";
 
-		expect(state.lastTerminal!.wheelHandler!({ clientX: 0, clientY: 0, deltaY: -50 } as WheelEvent)).toBe(false);
+		expect(state.lastTerminal!.wheelHandler!({ clientX: 0, clientY: 0, deltaY: -51 } as WheelEvent)).toBe(false);
 		expect(onInput).toHaveBeenLastCalledWith("\x1b[5~", "wheel");
 		expect(state.lastTerminal!.scrollLines).not.toHaveBeenCalled();
 
@@ -2649,7 +2858,7 @@ describe("XtermTerminal", () => {
 		// via the paneScrollsByKeyboard hint, tested separately.
 		state.lastTerminal!.modes.mouseTrackingMode = "any";
 
-		expect(state.lastTerminal!.wheelHandler!({ clientX: 0, clientY: 0, deltaY: -50 } as WheelEvent)).toBe(false);
+		expect(state.lastTerminal!.wheelHandler!({ clientX: 0, clientY: 0, deltaY: -51 } as WheelEvent)).toBe(false);
 		expect(onInput).toHaveBeenLastCalledWith("\x1b[<64;1;1M".repeat(3), "wheel");
 	});
 
@@ -2664,15 +2873,16 @@ describe("XtermTerminal", () => {
 		expect(onInput).toHaveBeenLastCalledWith("\x1b[5~", "wheel");
 	});
 
+	// LADO fork (TDD §11): 내장 패널은 Alt·Cmd 클릭으로 연다.
 	it("routes web links to the AO browser and does not open the system browser", () => {
 		const open = vi.spyOn(window, "open").mockReturnValue(null);
 		const onLinkOpen = vi.fn();
 		render(<XtermTerminal onLinkOpen={onLinkOpen} theme="dark" />);
 
-		// A left-click on an http(s) link is reported to the parent (which shows it
+		// An Alt-click on an http(s) link is reported to the parent (which shows it
 		// in the AO Browser panel); it must NOT spawn a system-browser window.
 		expect(state.linkHandler).toBeTypeOf("function");
-		state.linkHandler!({} as MouseEvent, "https://example.com");
+		state.linkHandler!({ altKey: true } as MouseEvent, "https://example.com");
 
 		expect(onLinkOpen).toHaveBeenCalledWith("https://example.com");
 		expect(open).not.toHaveBeenCalled();
@@ -2687,7 +2897,7 @@ describe("XtermTerminal", () => {
 			activate: (event: MouseEvent, uri: string) => void;
 		};
 
-		oscLinkHandler.activate({} as MouseEvent, "http://localhost:3000");
+		oscLinkHandler.activate({ altKey: true } as MouseEvent, "http://localhost:3000");
 
 		expect(onLinkOpen).toHaveBeenCalledWith("http://localhost:3000");
 		expect(open).not.toHaveBeenCalled();
@@ -2811,12 +3021,11 @@ describe("XtermTerminal", () => {
 		});
 	});
 
+	// LADO fork (TDD §11): 그냥 클릭한 웹 링크는 시스템 브라우저로 연다.
 	it.each([
-		["plain", "Option/Alt", { altKey: true }],
-		["OSC 8", "Option/Alt", { altKey: true }],
-		["plain", "Command", { metaKey: true }],
-		["OSC 8", "Command", { metaKey: true }],
-	])("opens %s web links in the system browser on %s+Click", (kind, _modifier, event) => {
+		["plain", "a plain", {}],
+		["OSC 8", "a plain", {}],
+	])("opens %s web links in the system browser on %s click", (kind, _modifier, event) => {
 		const openExternal = vi.fn().mockResolvedValue(undefined);
 		window.ao!.app.openExternal = openExternal;
 		const onLinkOpen = vi.fn();
@@ -2824,6 +3033,59 @@ describe("XtermTerminal", () => {
 		const oscHandler = state.lastTerminal!.options.linkHandler as { activate: (event: MouseEvent, uri: string) => void };
 		const handler = kind === "plain" ? state.linkHandler! : oscHandler.activate;
 		handler(event as unknown as MouseEvent, "https://example.com");
+		expect(openExternal).toHaveBeenCalledWith("https://example.com");
+		expect(onLinkOpen).not.toHaveBeenCalled();
+	});
+
+	// LADO fork (TDD §11): Alt·Cmd 클릭은 내장 패널로 연다.
+	it.each([
+		["plain", { altKey: true }],
+		["OSC 8", { altKey: true }],
+		["plain", { metaKey: true }],
+		["OSC 8", { metaKey: true }],
+	])("opens %s web links in the AO browser on a modifier click: %j", (kind, event) => {
+		const openExternal = vi.fn().mockResolvedValue(undefined);
+		window.ao!.app.openExternal = openExternal;
+		const onLinkOpen = vi.fn();
+		render(<XtermTerminal onLinkOpen={onLinkOpen} theme="dark" />);
+		const oscHandler = state.lastTerminal!.options.linkHandler as { activate: (event: MouseEvent, uri: string) => void };
+		const handler = kind === "plain" ? state.linkHandler! : oscHandler.activate;
+		handler(event as unknown as MouseEvent, "https://example.com");
+		expect(onLinkOpen).toHaveBeenCalledWith("https://example.com");
+		expect(openExternal).not.toHaveBeenCalled();
+	});
+
+	// LADO fork (TDD §11): 패널 처리기가 없으면 수정키 클릭도 시스템 브라우저로 연다.
+	it("opens web links in the system browser when no AO browser handler is given", () => {
+		const openExternal = vi.fn().mockResolvedValue(undefined);
+		window.ao!.app.openExternal = openExternal;
+		render(<XtermTerminal theme="dark" />);
+		state.linkHandler!({} as MouseEvent, "https://example.com/a");
+		state.linkHandler!({ altKey: true } as MouseEvent, "https://example.com/b");
+		expect(openExternal.mock.calls).toEqual([["https://example.com/a"], ["https://example.com/b"]]);
+	});
+
+	// LADO fork (TDD §11): 원격 호스트의 localhost 링크는 이 컴퓨터의 브라우저로 열지 않고
+	// 그 호스트의 미리보기(패널 처리기)로 보낸다.
+	it.each(["http://localhost:3000", "http://127.0.0.1:5173/app", "http://0.0.0.0:8080"])("keeps a remote host's local link %s off this computer's browser", (uri) => {
+		const openExternal = vi.fn().mockResolvedValue(undefined);
+		window.ao!.app.openExternal = openExternal;
+		const onLinkOpen = vi.fn();
+		const { unmount } = render(<XtermTerminal onLinkOpen={onLinkOpen} ladoRemoteHost theme="dark" />);
+		state.linkHandler!({} as MouseEvent, uri);
+		expect(onLinkOpen).toHaveBeenCalledWith(uri);
+		unmount();
+		render(<XtermTerminal ladoRemoteHost theme="dark" />);
+		state.linkHandler!({} as MouseEvent, uri);
+		expect(openExternal).not.toHaveBeenCalled();
+	});
+
+	it("still opens a remote host's public web link in the system browser", () => {
+		const openExternal = vi.fn().mockResolvedValue(undefined);
+		window.ao!.app.openExternal = openExternal;
+		const onLinkOpen = vi.fn();
+		render(<XtermTerminal onLinkOpen={onLinkOpen} ladoRemoteHost theme="dark" />);
+		state.linkHandler!({} as MouseEvent, "https://example.com");
 		expect(openExternal).toHaveBeenCalledWith("https://example.com");
 		expect(onLinkOpen).not.toHaveBeenCalled();
 	});

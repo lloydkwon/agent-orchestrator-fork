@@ -23,6 +23,7 @@
 import { memo, useCallback, useEffect, useState, type MouseEvent } from "react";
 import { cn } from "../../lib/utils";
 import { isWebLink, openLinkInSystemBrowser } from "../../lib/external-link-policy";
+import { ladoWebLinkClickOpensAOBrowser } from "../../lib/lado-link-click";
 import { isRenderableDiagram, renderMermaidDiagram, type DiagramTheme } from "../../lib/mermaid-diagram";
 import { CopyButton } from "./CopyButton";
 
@@ -113,8 +114,9 @@ export const MermaidBlock = memo(function MermaidBlock({
 			const href = anchor.getAttribute("href");
 			if (!href) return;
 			event.preventDefault();
+			// LADO fork (TDD §11): 그냥 클릭은 시스템 브라우저, 수정키 클릭이 내장 패널이다.
 			const toSystemBrowser =
-				event.metaKey || event.ctrlKey || event.altKey || !onLinkOpen || !isWebLink(href);
+				!ladoWebLinkClickOpensAOBrowser(event.metaKey || event.ctrlKey || event.altKey) || !onLinkOpen || !isWebLink(href);
 			if (toSystemBrowser) {
 				void openLinkInSystemBrowser(href);
 				return;

@@ -13,13 +13,13 @@ vi.mock("../../lib/lado", async (original) => ({
 }));
 
 /** The worker watch card below (issue #42), with nothing saved. */
-const watchDefaults = { compactWindow: 200_000, taskCostCents: 100_00, sessionCostCents: 30_00, sessionCompactions: 3, stallMinutes: 120, wakeEnabled: true };
+const watchDefaults = { compactWindow: 200_000, taskCostCents: 100_00, sessionCostCents: 30_00, sessionCompactions: 3, stallMinutes: 120, wakeEnabled: true, awaitMinutes: 10 };
 const watchSettings: lado.LadoWatchSettings = {
 	projectId: "",
 	defaults: watchDefaults,
 	inherited: watchDefaults,
 	effective: watchDefaults,
-	values: { compactWindow: null, taskCostCents: null, sessionCostCents: null, sessionCompactions: null, stallMinutes: null, wakeEnabled: null },
+	values: { compactWindow: null, taskCostCents: null, sessionCostCents: null, sessionCompactions: null, stallMinutes: null, wakeEnabled: null, awaitMinutes: null },
 };
 
 // What the daemon answers before anyone saved: 2 at once, 8 hours, hold on;
@@ -37,6 +37,7 @@ const defaults: lado.LadoDispatchSettings = {
 	maxWorkers: 6,
 	holdOnDiskLow: true,
 	minFreeDiskGb: 10,
+	restoreOnStart: true,
 };
 
 /** What a save sends: every value, the plan worker ones too. */
@@ -77,6 +78,7 @@ describe("RunsSection", () => {
 			maxWorkers: input.maxWorkers ?? defaults.maxWorkers,
 			holdOnDiskLow: input.holdOnDiskLow ?? defaults.holdOnDiskLow,
 			minFreeDiskGb: input.minFreeDiskGb ?? defaults.minFreeDiskGb,
+			restoreOnStart: input.restoreOnStart ?? defaults.restoreOnStart,
 			updatedAt: "2026-10-23T10:00:00Z",
 		}));
 	});
@@ -160,6 +162,19 @@ describe("RunsSection", () => {
 		await waitFor(() => expect(lado.updateLadoDispatchSettings).toHaveBeenLastCalledWith(sent({ maxWorkers: 9, minFreeDiskGb: 20, holdOnDiskLow: false })));
 		// Without the wait the threshold does not count.
 		await waitFor(() => expect(disk()).toBeDisabled());
+	});
+
+	it("restores sessions after a restart until the switch is turned off", async () => {
+		const user = userEvent.setup();
+		renderSection();
+
+		const restore = () => screen.getByRole("switch", { name: "Restore sessions after a restart" });
+		await waitFor(() => expect(restore()).toBeChecked());
+		expect(screen.getByText(/start again in their own conversations/)).toBeInTheDocument();
+
+		await user.click(restore());
+		await waitFor(() => expect(lado.updateLadoDispatchSettings).toHaveBeenLastCalledWith(sent({ restoreOnStart: false })));
+		await waitFor(() => expect(restore()).not.toBeChecked());
 	});
 
 	it("does not save a value that is already set", async () => {
